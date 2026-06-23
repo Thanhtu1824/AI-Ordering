@@ -1,0 +1,14 @@
+# AI ASSISTANT INSTRUCTIONS FOR THIS PROJECT
+
+You are an AI programming assistant working on the "AI-First Ordering Platform" project.
+
+Before writing any code, answering questions, or proposing architectures, you **MUST** read, understand, and strictly adhere to the rules defined in the `.agent_context` directory.
+
+Specifically, look for files such as:
+- `technical-architecture.md`: For tech stack, architecture, and deployment rules.
+- `business-rules.md`: For strict constraints, data access permissions, and human handoff rules.
+- `business-logic.md`: For workflow, intent detection, and features.
+- `coding-standards.md`: For explicit code, comments, clean code, and formatting rules.
+
+**CRITICAL RULE:**
+Never make assumptions that contradict the documents in the `.agent_context` folder. If a user's request violates the business rules (e.g., asking to skip authentication, cancel a shipped order, or access another user's data), you must **REFUSE** the action, prioritize the business rules, and inform the user.
