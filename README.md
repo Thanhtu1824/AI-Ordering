@@ -43,14 +43,3 @@ Các thao tác liên quan tới cơ sở dữ liệu được thực hiện tron
   npm run start:dev --workspace=backend
   ```
 
----
-
-## 📝 Tóm tắt tiến độ (Những gì chúng ta đã làm)
-1. **Khởi tạo Monorepo**: Cấu hình không gian làm việc chứa cả ứng dụng Next.js và NestJS.
-2. **Thiết kế UI (Frontend)**: Xây dựng Layout chia đôi màn hình 50/50:
-   - Cột trái: Khung chat dính (Sticky Chat) với giao diện tiếng Việt, tự động cuộn (Auto-scroll).
-   - Cột phải: Khung hiển thị Generative UI động (Ví dụ: Bảng báo giá chi tiết - QuoteSummary).
-3. **Kết nối Real-time**: Thiết lập WebSocket Gateway (NestJS) và kết nối với Frontend qua `socket.io-client`. Nhập tin nhắn sẽ được truyền 2 chiều ngay lập tức.
-4. **Cấu hình Infrastructure & Database**:
-   - Viết cấu hình `docker-compose.yml` cho Postgres 18 và Redis. Khắc phục lỗi volume của Postgres 18 và lỗi đụng Port 5432 trên Windows.
-   - Thiết lập Prisma ORM (v5), tạo các Schema ban đầu (`User`, `Product`, `Order`, `OrderItem`) và chạy lệnh Migration đồng bộ thành công vào DB.
