@@ -1,45 +1,49 @@
 # AI-First Ordering Platform
 
-Đây là dự án Monorepo xây dựng một hệ thống đặt hàng ứng dụng AI (Generative UI) kết hợp Chatbot.
+A next-generation e-commerce system where an AI Chatbot serves as the primary interface for users to place orders.
 
-## 🏗 Công nghệ sử dụng
+**Core Features:**
+- **Automated Consulting & Ordering:** The AI automatically analyzes intent, discovers needs, searches for products, and processes orders through natural conversation.
+- **Generative UI:** Visually displays UI components (e.g., detailed quote tables, shopping carts) directly within the chat interface instead of just plain text responses.
+- **Safe Workflow (Human Handoff):** Covers the entire lifecycle from quotation to delivery, but automatically escalates to a human staff member when encountering sensitive situations (complaints, cancellations).
+
+## 🏗 Technology Stack
 - **Frontend**: Next.js (App Router), Tailwind CSS, shadcn/ui, socket.io-client
 - **Backend**: NestJS, TypeScript, Socket.IO
-- **Database**: PostgreSQL (quản lý bằng Prisma ORM), Redis
-- **AI Core** (Sắp tích hợp): LangGraph, Google GenAI
+- **Database**: PostgreSQL (managed by Prisma ORM), Redis
+- **AI Core** (Upcoming): LangGraph, Google GenAI
 - **Infrastructure**: Docker Compose
 
 ---
 
-## 🚀 Các lệnh cơ bản trong dự án (Commands Guide)
+## 🚀 Commands Guide
 
-Dưới đây là danh sách các lệnh quan trọng để vận hành dự án, được chia theo từng mục đích:
+Below is a list of important commands to run the project, categorized by purpose:
 
-### 1. Cài đặt và Quản lý Packages (Monorepo)
-Dự án sử dụng tính năng **npm workspaces** để quản lý nhiều ứng dụng trong cùng một thư mục.
-- `npm install` : Cài đặt toàn bộ thư viện cho cả Frontend và Backend.
-- `npm install <tên-gói> --workspace=frontend` : Cài đặt một gói NPM riêng cho Frontend.
-- `npm install <tên-gói> --workspace=backend` : Cài đặt một gói NPM riêng cho Backend.
+### 1. Package Installation & Management (Monorepo)
+The project uses **npm workspaces** to manage multiple applications in the same directory.
+- `npm install` : Install all dependencies for both Frontend and Backend.
+- `npm install <package-name> --workspace=frontend` : Install an NPM package exclusively for the Frontend.
+- `npm install <package-name> --workspace=backend` : Install an NPM package exclusively for the Backend.
 
 ### 2. Infrastructure (Docker)
-Cơ sở dữ liệu (PostgreSQL) và bộ nhớ đệm (Redis) được chạy bằng Docker để đảm bảo tính cô lập.
-- `docker-compose up -d` : Khởi động các Container (Database, Redis) chạy ngầm dưới nền.
-- `docker-compose down` : Dừng các Container.
-- `docker-compose down -v` : Dừng Container và **xóa toàn bộ dữ liệu** (Dùng khi muốn reset DB làm lại từ đầu).
+The database (PostgreSQL) and cache (Redis) are run using Docker to ensure isolation.
+- `docker-compose up -d` : Start the containers (Database, Redis) in the background.
+- `docker-compose down` : Stop the containers.
+- `docker-compose down -v` : Stop the containers and **delete all data** (Use this when you want to reset the DB and start from scratch).
 
 ### 3. Database (Prisma ORM)
-Các thao tác liên quan tới cơ sở dữ liệu được thực hiện trong thư mục `apps/backend`.
-- `cd apps/backend && npx prisma migrate dev` : Đồng bộ các bảng từ file `schema.prisma` vào trong PostgreSQL và tự động tạo Prisma Client.
-- `cd apps/backend && npx prisma studio` : Mở giao diện Web (trên trình duyệt) để xem, thêm, sửa, xóa dữ liệu trong Database một cách trực quan.
+All database-related operations are performed within the `apps/backend` directory.
+- `cd apps/backend && npx prisma migrate dev` : Synchronize tables from the `schema.prisma` file into PostgreSQL and automatically generate the Prisma Client.
+- `cd apps/backend && npx prisma studio` : Open the Web interface (in the browser) to visually view, add, edit, or delete data in the Database.
 
-### 4. Khởi chạy Ứng dụng
-Để chạy dự án, bạn cần khởi động cả 2 service song song ở 2 Terminal khác nhau:
-- **Chạy Frontend (Port 3000):**
+### 4. Running the Application
+To run the project, you need to start both services simultaneously in 2 different Terminals:
+- **Run Frontend (Port 3000):**
   ```bash
   npm run dev --workspace=frontend
   ```
-- **Chạy Backend (Port 3001):**
+- **Run Backend (Port 3001):**
   ```bash
   npm run start:dev --workspace=backend
   ```
-
