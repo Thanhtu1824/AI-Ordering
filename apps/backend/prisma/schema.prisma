@@ -7,40 +7,102 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum OrderState {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH_ON_DELIVERY
+  CREDIT_CARD
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  phone     String   @unique
-  address   String?
-  orders    Order[]
-  createdAt DateTime @default(now())
+  id           String   @id @default(uuid())
+  name         String
+  email        String?  @unique
+  phone        String   @unique
+  passwordHash String?
+  address      String?
+  role         Role     @default(CUSTOMER)
+  orders       Order[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 model Product {
-  id          String      @id @default(uuid())
-  name        String
-  description String?
-  price       Float
-  stock       Int         @default(0)
-  orderItems  OrderItem[]
+  id            String      @id @default(uuid())
+  name          String
+  slug          String      @unique @default(uuid())
+  description   String?
+  price         Float
+  
+  // Các trường cho Order hộ
+  sourceUrl     String?     // Link gốc (Taobao, 1688, Amazon...)
+  originalPrice Float?      // Giá gốc ngoại tệ
+  currency      String      @default("VND") // Đơn vị tiền tệ (CNY, USD, v.v.)
+  weight        Float?      // Cân nặng thực tế (kg)
+
+  imageUrl      String?
+  isActive      Boolean     @default(true)
+  categoryId    String?
+  category      Category?   @relation(fields: [categoryId], references: [id])
+  orderItems    OrderItem[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 }
 
 model Order {
-  id          String      @id @default(uuid())
-  userId      String
-  user        User        @relation(fields: [userId], references: [id])
-  status      String      @default("PENDING") // PENDING, CONFIRMED, SHIPPED, CANCELLED
-  totalAmount Float
-  items       OrderItem[]
-  createdAt   DateTime    @default(now())
+  id              String        @id @default(uuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  status          OrderState    @default(PENDING)
+  totalAmount     Float
+  paymentMethod   PaymentMethod @default(CASH_ON_DELIVERY)
+  paymentStatus   PaymentStatus @default(PENDING)
+  shippingAddress String?
+  notes           String?
+  items           OrderItem[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 }
 
 model OrderItem {
-  id        String  @id @default(uuid())
+  id        String   @id @default(uuid())
   orderId   String
-  order     Order   @relation(fields: [orderId], references: [id])
+  order     Order    @relation(fields: [orderId], references: [id])
   productId String
-  product   Product @relation(fields: [productId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
   quantity  Int
-  price     Float   // Giá tại thời điểm mua
+  price     Float // Giá tại thời điểm mua
+  discount  Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

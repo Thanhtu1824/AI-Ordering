@@ -7,32 +7,39 @@ import { z } from 'zod';
 
 export const createProductDiscoveryAgent = (prisma: PrismaService, model: ChatGoogleGenerativeAI) => {
   const lookupInternalProductTool = tool(
-    async ({ url_or_id }) => {
-      let id = url_or_id;
-      if (url_or_id.includes('yourdomain.com/product/')) {
-        const parts = url_or_id.split('/');
+    async ({ query }) => {
+      let id = query;
+      if (query.includes('yourdomain.com/product/')) {
+        const parts = query.split('/');
         id = parts[parts.length - 1];
       }
-      
+
       try {
-        const product = await prisma.product.findUnique({
-          where: { id },
+        const products = await prisma.product.findMany({
+          take: 4,
+          where: {
+            OR: [
+              { id: id },
+              { slug: id },
+              { name: { contains: id, mode: 'insensitive' } }
+            ]
+          },
         });
 
-        if (!product) {
+        if (!products || products.length === 0) {
           return "Product not found.";
         }
 
-        return JSON.stringify(product);
+        return JSON.stringify(products);
       } catch (e) {
         return "Invalid ID format or database error.";
       }
     },
     {
       name: "lookup_internal_product",
-      description: "Lookup product details (price, stock) using an internal product URL (yourdomain.com) or ID.",
+      description: "Lookup product details (price, stock) using a product name, internal product URL, or ID.",
       schema: z.object({
-        url_or_id: z.string().describe("The product URL or ID"),
+        query: z.string().describe("The product name, URL, or ID to search for"),
       }),
     }
   );
@@ -57,9 +64,21 @@ export const createProductDiscoveryAgent = (prisma: PrismaService, model: ChatGo
 
       let finalMessages = [response];
       let focusedEntity = {};
+      let uiEvent: any = null;
 
-      if (response.tool_calls && response.tool_calls.length > 0) {
-        for (const toolCall of response.tool_calls) {
+      let toolCalls = response.tool_calls || [];
+      if (toolCalls.length === 0 && Array.isArray(response.content)) {
+        toolCalls = response.content
+          .filter((c: any) => c.type === 'functionCall' || c.type === 'tool_use')
+          .map((c: any) => ({
+             name: c.functionCall?.name || c.name,
+             args: c.functionCall?.args || c.input,
+             id: c.functionCall?.id || c.id || Math.random().toString(36).substring(7)
+          }));
+      }
+
+      if (toolCalls.length > 0) {
+        for (const toolCall of toolCalls) {
           if (toolCall.name === 'lookup_internal_product') {
             const rawToolResult: any = await lookupInternalProductTool.invoke(toolCall);
             const toolResultStr = typeof rawToolResult === 'string' ? rawToolResult : (rawToolResult.content || JSON.stringify(rawToolResult));
@@ -90,6 +109,7 @@ export const createProductDiscoveryAgent = (prisma: PrismaService, model: ChatGo
             try {
               if (toolResultStr !== "Product not found." && toolResultStr !== "Invalid ID format or database error.") {
                 focusedEntity = JSON.parse(toolResultStr);
+                uiEvent = { type: 'PRODUCT_CARD', data: focusedEntity };
               }
             } catch (e) {}
           }
@@ -98,7 +118,8 @@ export const createProductDiscoveryAgent = (prisma: PrismaService, model: ChatGo
 
       return {
         messages: finalMessages,
-        focusedEntity: Object.keys(focusedEntity).length > 0 ? focusedEntity : state.focusedEntity
+        focusedEntity: Object.keys(focusedEntity).length > 0 ? focusedEntity : state.focusedEntity,
+        uiEvent: uiEvent || state.uiEvent
       };
     } catch (error) {
       console.error('Product discovery error:', error);
