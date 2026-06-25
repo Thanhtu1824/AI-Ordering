@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StateGraph, START, END, MemorySaver } from '@langchain/langgraph';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { HarmBlockThreshold, HarmCategory } from '@google/generative-ai';
 import { BaseMessage, HumanMessage } from '@langchain/core/messages';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -18,16 +19,32 @@ export class AiService {
   private app: any;
 
   constructor(private readonly prisma: PrismaService) {
-    try {
-      this.model = new ChatGoogleGenerativeAI({
-        model: 'gemini-2.5-flash',
-        temperature: 0,
-      });
-    } catch (e) {
-      this.logger.warn('Failed to initialize ChatGoogleGenerativeAI. Is GOOGLE_API_KEY set?');
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      this.logger.error('GOOGLE_API_KEY is not set. AI features will be unavailable.');
+    } else {
+      try {
+        this.model = new ChatGoogleGenerativeAI({
+          model: 'gemini-2.5-flash',
+          temperature: 0,
+          safetySettings: [
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+          ],
+        });
+        this.logger.log('ChatGoogleGenerativeAI initialized successfully.');
+      } catch (e) {
+        this.logger.error('Failed to initialize ChatGoogleGenerativeAI.', e);
+      }
     }
 
-    this.initGraph();
+    if (this.model) {
+      this.initGraph();
+    } else {
+      this.logger.warn('LangGraph will not be initialized because the AI model is unavailable.');
+    }
   }
 
   private initGraph() {
@@ -51,11 +68,11 @@ export class AiService {
     // Define Graph Edges
     // 1. Everything starts at Intent Detection
     workflow.addEdge(START, 'detectIntent');
-    
+
     // 2. Route based on detected intent
     workflow.addConditionalEdges('detectIntent', (state: AgentStateType) => {
       const intent = state.currentIntent;
-      
+
       switch (intent) {
         case 'search_product':
           return 'productDiscovery';
@@ -82,9 +99,17 @@ export class AiService {
   }
 
   async processMessage(message: string, sessionId: string = 'default-session'): Promise<any> {
+    if (!this.app) {
+      this.logger.error('LangGraph app is not initialized. Check GOOGLE_API_KEY configuration.');
+      return {
+        text: 'Hệ thống AI chưa được cấu hình. Vui lòng liên hệ quản trị viên để kiểm tra GOOGLE_API_KEY.',
+        uiEvent: null,
+      };
+    }
+
     try {
       const config = { configurable: { thread_id: sessionId } };
-      
+
       const finalState = await this.app.invoke(
         { messages: [new HumanMessage(message)] },
         config

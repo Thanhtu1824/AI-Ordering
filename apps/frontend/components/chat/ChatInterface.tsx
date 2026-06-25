@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useChat } from "./ChatContext";
 
+import ReactMarkdown from 'react-markdown';
+
 export function ChatInterface() {
   const { messages, sendMessage, isTyping, isRateLimited, cooldownRemaining } = useChat();
   const [input, setInput] = useState("");
@@ -34,7 +36,15 @@ export function ChatInterface() {
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`px-4 py-2 rounded-2xl max-w-[80%] shadow-sm ${msg.role === 'user' ? 'bg-zinc-900 text-white dark:bg-white dark:text-black' : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100'}`}>
-                {msg.content}
+                {typeof msg.content === 'string' ? (
+                  <div className="[&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>p]:mb-2 [&>p:last-child]:mb-0 space-y-1">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <pre className="whitespace-pre-wrap font-mono text-xs">
+                    {JSON.stringify(msg.content, null, 2)}
+                  </pre>
+                )}
               </div>
             </div>
           ))}

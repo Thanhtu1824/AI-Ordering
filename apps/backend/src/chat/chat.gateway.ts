@@ -77,8 +77,8 @@ export class ChatGateway {
     // Send typing indicator
     client.emit('typing', true);
     
-    // Process with AI
-    const result = await this.aiService.processMessage(normalizedData);
+    // Process with AI – use client.id as sessionId to maintain per-user conversation context
+    const result = await this.aiService.processMessage(normalizedData, client.id);
     
     // Send back the AI response
     client.emit('aiResponse', result);
