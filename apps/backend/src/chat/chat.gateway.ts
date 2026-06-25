@@ -1,6 +1,7 @@
 import { WebSocketGateway, SubscribeMessage, MessageBody, ConnectedSocket, WebSocketServer } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { AiService } from '../ai/ai.service';
+import { AuthService } from '../auth/auth.service';
 import Redis from 'ioredis';
 
 @WebSocketGateway({
@@ -14,7 +15,7 @@ export class ChatGateway {
   
   private redis: Redis;
 
-  constructor(private readonly aiService: AiService) {
+  constructor(private readonly aiService: AiService, private readonly authService: AuthService) {
     // Connect to Redis using default port exposed by docker-compose
     this.redis = new Redis({
       host: 'localhost',
@@ -23,7 +24,10 @@ export class ChatGateway {
   }
 
   @SubscribeMessage('sendMessage')
-  async handleMessage(@MessageBody() data: string, @ConnectedSocket() client: Socket): Promise<void> {
+  async handleMessage(@MessageBody() payload: { text: string; token?: string } | string, @ConnectedSocket() client: Socket): Promise<void> {
+    const data = typeof payload === 'string' ? payload : payload.text;
+    const token = typeof payload === 'object' ? payload.token : undefined;
+
     // 0. Payload Limit
     if (data.length > 500) {
       client.emit('aiResponse', { 
@@ -74,11 +78,17 @@ export class ChatGateway {
       }
     }
 
+    // Verify token if provided
+    let user = null;
+    if (token) {
+      user = this.authService.verifyToken(token);
+    }
+
     // Send typing indicator
     client.emit('typing', true);
     
     // Process with AI – use client.id as sessionId to maintain per-user conversation context
-    const result = await this.aiService.processMessage(normalizedData, client.id);
+    const result = await this.aiService.processMessage(normalizedData, client.id, user);
     
     // Send back the AI response
     client.emit('aiResponse', result);

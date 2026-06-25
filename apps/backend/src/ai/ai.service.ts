@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { StateGraph, START, END, MemorySaver } from '@langchain/langgraph';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { HarmBlockThreshold, HarmCategory } from '@google/generative-ai';
-import { BaseMessage, HumanMessage } from '@langchain/core/messages';
+import { BaseMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { PrismaService } from '../prisma/prisma.service';
 
 import { AgentState, AgentStateType } from './state/agent.state';
@@ -11,6 +11,8 @@ import { createProductDiscoveryAgent } from './agents/product-discovery.agent';
 import { createQuoteAgent } from './agents/quote.agent';
 import { createHumanHandoffAgent } from './agents/human-handoff.agent';
 import { createUnknownAgent } from './agents/unknown.agent';
+import { createAuthAgent } from './agents/auth.agent';
+import { AuthService } from '../auth/auth.service';
 
 @Injectable()
 export class AiService {
@@ -18,7 +20,7 @@ export class AiService {
   private model!: ChatGoogleGenerativeAI;
   private app: any;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(private readonly prisma: PrismaService, private readonly authService: AuthService) {
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
       this.logger.error('GOOGLE_API_KEY is not set. AI features will be unavailable.');
@@ -57,6 +59,7 @@ export class AiService {
     const quoteAgent = createQuoteAgent();
     const humanHandoffAgent = createHumanHandoffAgent();
     const unknownAgent = createUnknownAgent(this.model);
+    const authAgent = createAuthAgent(this.authService, this.model);
 
     // Add Nodes
     workflow.addNode('detectIntent', intentAgent);
@@ -64,6 +67,7 @@ export class AiService {
     workflow.addNode('generateQuote', quoteAgent);
     workflow.addNode('humanHandoff', humanHandoffAgent);
     workflow.addNode('generalChat', unknownAgent);
+    workflow.addNode('auth', authAgent);
 
     // Define Graph Edges
     // 1. Everything starts at Intent Detection
@@ -74,6 +78,9 @@ export class AiService {
       const intent = state.currentIntent;
 
       switch (intent) {
+        case 'login':
+        case 'register':
+          return 'auth';
         case 'search_product':
           return 'productDiscovery';
         case 'create_order':
@@ -93,12 +100,13 @@ export class AiService {
     workflow.addEdge('generateQuote', END);
     workflow.addEdge('humanHandoff', END);
     workflow.addEdge('generalChat', END);
+    workflow.addEdge('auth', END);
 
     const checkpointer = new MemorySaver();
     this.app = workflow.compile({ checkpointer });
   }
 
-  async processMessage(message: string, sessionId: string = 'default-session'): Promise<any> {
+  async processMessage(message: string, sessionId: string = 'default-session', user?: any): Promise<any> {
     if (!this.app) {
       this.logger.error('LangGraph app is not initialized. Check GOOGLE_API_KEY configuration.');
       return {
@@ -110,8 +118,12 @@ export class AiService {
     try {
       const config = { configurable: { thread_id: sessionId } };
 
+      const systemMessage = user 
+        ? new SystemMessage(`The current user is logged in. Their name is ${user.name}, phone: ${user.phone}.`)
+        : new SystemMessage(`The current user is a guest and not logged in.`);
+
       const finalState = await this.app.invoke(
-        { messages: [new HumanMessage(message)] },
+        { messages: [systemMessage, new HumanMessage(message)] },
         config
       );
 
