@@ -10,6 +10,8 @@ interface ChatContextType {
   isTyping: boolean;
   isRateLimited: boolean;
   cooldownRemaining: number;
+  user: any | null;
+  logout: () => void;
 }
 
 const ChatContext = createContext<ChatContextType>({
@@ -19,6 +21,8 @@ const ChatContext = createContext<ChatContextType>({
   isTyping: false,
   isRateLimited: false,
   cooldownRemaining: 0,
+  user: null,
+  logout: () => {},
 });
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
@@ -28,8 +32,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [isRateLimited, setIsRateLimited] = useState<boolean>(false);
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [user, setUser] = useState<any | null>(null);
+  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
+    // Load from localStorage on mount
+    const savedToken = localStorage.getItem('token');
+    const savedUser = localStorage.getItem('user');
+    if (savedToken && savedUser) {
+      setToken(savedToken);
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (e) {}
+    }
+
     const newSocket = io("http://localhost:3001");
     setSocket(newSocket);
 
@@ -37,6 +53,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       setMessages((prev) => [...prev, { role: "ai", content: data.text }]);
       if (data.uiEvent) {
         setUiEvent(data.uiEvent);
+        if (data.uiEvent.type === 'AUTH_SUCCESS') {
+          const { token: newToken, user: newUser } = data.uiEvent.data;
+          setToken(newToken);
+          setUser(newUser);
+          localStorage.setItem('token', newToken);
+          localStorage.setItem('user', JSON.stringify(newUser));
+        }
       }
     });
 
@@ -70,12 +93,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setIsTyping(true);
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     if (socket) {
-      socket.emit("sendMessage", text);
+      socket.emit("sendMessage", { text, token });
     }
   };
 
+  const logout = () => {
+    setToken(null);
+    setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setMessages([{ role: "ai", content: "Bạn đã đăng xuất. Tôi có thể giúp gì cho bạn tiếp theo?" }]);
+  };
+
   return (
-    <ChatContext.Provider value={{ messages, sendMessage, uiEvent, isTyping, isRateLimited, cooldownRemaining }}>
+    <ChatContext.Provider value={{ messages, sendMessage, uiEvent, isTyping, isRateLimited, cooldownRemaining, user, logout }}>
       {children}
     </ChatContext.Provider>
   );
