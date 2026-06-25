@@ -12,3 +12,6 @@ Specifically, look for files such as:
 
 **CRITICAL RULE:**
 Never make assumptions that contradict the documents in the `.agent_context` folder. If a user's request violates the business rules (e.g., asking to skip authentication, cancel a shipped order, or access another user's data), you must **REFUSE** the action, prioritize the business rules, and inform the user.
+
+**EXECUTION RULE:**
+Bạn luôn luôn phải tạo ra một implementation plan và ĐỢI người dùng (USER) review và cho phép TRƯỚC KHI áp dụng bất kỳ thay đổi cấu hình hoặc viết bất kỳ dòng code nào. (Always ask for user review before applying configuration or writing any code).
