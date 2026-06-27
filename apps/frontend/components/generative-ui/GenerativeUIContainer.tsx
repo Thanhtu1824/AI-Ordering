@@ -16,17 +16,21 @@ export function GenerativeUIContainer() {
         <h2 className="text-xl font-semibold tracking-tight">Kết quả</h2>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-3xl w-full mx-auto flex justify-center">
+      <div className="flex-1 flex items-start justify-center p-6 overflow-y-auto">
+        <div className="w-full max-w-3xl">
           {uiEvent && uiEvent.type === 'ORDER_CONFIRMATION' ? (
-            <OrderConfirmation {...uiEvent.data} />
+            <div className="flex justify-center">
+              <OrderConfirmation {...uiEvent.data} />
+            </div>
           ) : uiEvent && uiEvent.type === 'CART' ? (
             <Cart {...uiEvent.data} />
           ) : uiEvent && uiEvent.type === 'QUOTE' ? (
-            <QuoteSummary {...uiEvent.data} />
+            <div className="flex justify-center">
+              <QuoteSummary {...uiEvent.data} />
+            </div>
           ) : uiEvent && uiEvent.type === 'PRODUCT_CARD' ? (
             Array.isArray(uiEvent.data) ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 w-full">
                 {uiEvent.data.map((product: any) => (
                   <ProductCard key={product.id} {...product} />
                 ))}
