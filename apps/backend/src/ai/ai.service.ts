@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AgentState, AgentStateType } from './state/agent.state';
 import { createIntentAgent } from './agents/intent.agent';
 import { createProductDiscoveryAgent } from './agents/product-discovery.agent';
-import { createQuoteAgent } from './agents/quote.agent';
+import { createOrderAgent } from './agents/order.agent';
 import { createHumanHandoffAgent } from './agents/human-handoff.agent';
 import { createUnknownAgent } from './agents/unknown.agent';
 import { createAuthAgent } from './agents/auth.agent';
@@ -56,7 +56,7 @@ export class AiService {
     // Initialize the specialized agents
     const intentAgent = createIntentAgent(this.model);
     const productDiscoveryAgent = createProductDiscoveryAgent(this.prisma, this.model);
-    const quoteAgent = createQuoteAgent();
+    const orderAgent = createOrderAgent(this.prisma, this.model);
     const humanHandoffAgent = createHumanHandoffAgent();
     const unknownAgent = createUnknownAgent(this.model);
     const authAgent = createAuthAgent(this.authService, this.model);
@@ -64,7 +64,7 @@ export class AiService {
     // Add Nodes
     workflow.addNode('detectIntent', intentAgent);
     workflow.addNode('productDiscovery', productDiscoveryAgent);
-    workflow.addNode('generateQuote', quoteAgent);
+    workflow.addNode('createOrder', orderAgent);
     workflow.addNode('humanHandoff', humanHandoffAgent);
     workflow.addNode('generalChat', unknownAgent);
     workflow.addNode('auth', authAgent);
@@ -85,8 +85,7 @@ export class AiService {
           return 'productDiscovery';
         case 'create_order':
         case 'payment':
-          // We map these to quote for now as a stepping stone
-          return 'generateQuote';
+          return 'createOrder';
         case 'complaint':
         case 'cancel_request':
           return 'humanHandoff';
@@ -97,7 +96,7 @@ export class AiService {
 
     // 3. All endpoint nodes go to END
     workflow.addEdge('productDiscovery', END);
-    workflow.addEdge('generateQuote', END);
+    workflow.addEdge('createOrder', END);
     workflow.addEdge('humanHandoff', END);
     workflow.addEdge('generalChat', END);
     workflow.addEdge('auth', END);
@@ -123,7 +122,7 @@ export class AiService {
         : new SystemMessage(`The current user is a guest and not logged in.`);
 
       const finalState = await this.app.invoke(
-        { messages: [systemMessage, new HumanMessage(message)] },
+        { messages: [systemMessage, new HumanMessage(message)], currentUser: user },
         config
       );
 
@@ -135,13 +134,15 @@ export class AiService {
 
       return {
         text: lastAiMessage,
-        uiEvent: finalState.uiEvent || null
+        uiEvent: finalState.uiEvent || null,
+        suggestions: finalState.suggestions || [],
       };
     } catch (error) {
       this.logger.error('Error processing message in LangGraph', error);
       return {
         text: 'Xin lỗi, hệ thống AI đang gặp sự cố. Vui lòng kiểm tra lại cấu hình hệ thống.',
-        uiEvent: null
+        uiEvent: null,
+        suggestions: [],
       };
     }
   }

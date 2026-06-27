@@ -4,6 +4,7 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { AuthService } from '../../auth/auth.service';
+import { parseStructuredResponse, mapMessagesToRoles, SUGGESTIONS_SUFFIX } from './agent.utils';
 
 export const createAuthAgent = (authService: AuthService, model: ChatGoogleGenerativeAI) => {
   const registerTool = tool(
@@ -49,7 +50,7 @@ If the user's intent is to register (Đăng ký), you must ask for their name, p
 If their intent is to log in (Đăng nhập), you must ask for their phone and password.
 Only call the register or login tool once you have ALL the required information. 
 If you do not have the required information, ask the user politely for the missing fields in Vietnamese.
-Do not make up fake details.`
+Do not make up fake details.${SUGGESTIONS_SUFFIX}`
         },
         ...state.messages.map((m: any) => {
           const type = m.getType ? m.getType() : (m._getType ? m._getType() : m.type);
@@ -60,8 +61,9 @@ Do not make up fake details.`
         }),
       ]);
 
-      let finalMessages = [response];
+      let finalMessages: any[] = [response];
       let uiEvent: any = null;
+      let suggestions: string[] = [];
 
       let toolCalls = response.tool_calls || [];
       if (toolCalls.length === 0 && Array.isArray(response.content)) {
@@ -89,15 +91,9 @@ Do not make up fake details.`
             const finalResponse = await model.invoke([
               {
                 role: 'system',
-                content: `Explain the tool result to the user naturally in Vietnamese. If successful, welcome them. If failed, explain why.`
+                content: `Explain the tool result to the user naturally in Vietnamese. If successful, welcome them. If failed, explain why.${SUGGESTIONS_SUFFIX}`
               },
-              ...state.messages.map((m: any) => {
-                const type = m.getType ? m.getType() : (m._getType ? m._getType() : m.type);
-                return {
-                  role: type === 'human' ? 'user' : 'assistant',
-                  content: m.content,
-                };
-              }),
+              ...mapMessagesToRoles(state.messages),
               response,
               {
                 role: 'tool',
@@ -106,20 +102,31 @@ Do not make up fake details.`
                 tool_call_id: toolCall.id
               } as any
             ]);
+
+            const rawContent = typeof finalResponse.content === 'string' ? finalResponse.content : JSON.stringify(finalResponse.content);
+            const parsed = parseStructuredResponse(rawContent);
+            suggestions = parsed.suggestions;
             
-            finalMessages = [response, { role: 'tool', name: toolCall.name, content: toolResultStr, tool_call_id: toolCall.id } as any, finalResponse];
+            finalMessages = [response, { role: 'tool', name: toolCall.name, content: toolResultStr, tool_call_id: toolCall.id } as any, new AIMessage(parsed.text)];
           }
         }
+      } else {
+        const rawContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+        const parsed = parseStructuredResponse(rawContent);
+        suggestions = parsed.suggestions;
+        finalMessages = [new AIMessage(parsed.text)];
       }
 
       return {
         messages: finalMessages,
-        uiEvent: uiEvent || state.uiEvent
+        uiEvent: uiEvent || state.uiEvent,
+        suggestions,
       };
     } catch (error) {
       console.error('Auth agent error:', error);
       return {
         messages: [new AIMessage("Hệ thống đang gặp sự cố khi xử lý xác thực. Bạn vui lòng thử lại sau nhé.")],
+        suggestions: [],
       };
     }
   };

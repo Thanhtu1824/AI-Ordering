@@ -45,6 +45,18 @@ export const AgentState = Annotation.Root({
     reducer: (x, y) => y ?? x,
     default: () => null,
   }),
+
+  // The currently authenticated user
+  currentUser: Annotation<any>({
+    reducer: (x, y) => y ?? x,
+    default: () => null,
+  }),
+
+  // Follow-up suggestions generated with the final response
+  suggestions: Annotation<string[]>({
+    reducer: (x, y) => (y && y.length > 0 ? y : x),
+    default: () => [],
+  }),
 });
 
 export type AgentStateType = typeof AgentState.State;
