@@ -12,6 +12,7 @@ interface ChatContextType {
   cooldownRemaining: number;
   user: any | null;
   logout: () => void;
+  suggestions: string[];
 }
 
 const ChatContext = createContext<ChatContextType>({
@@ -23,6 +24,7 @@ const ChatContext = createContext<ChatContextType>({
   cooldownRemaining: 0,
   user: null,
   logout: () => {},
+  suggestions: [],
 });
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
@@ -34,6 +36,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [user, setUser] = useState<any | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   useEffect(() => {
     // Load from localStorage on mount
@@ -51,14 +54,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     newSocket.on("aiResponse", (data) => {
       setMessages((prev) => [...prev, { role: "ai", content: data.text }]);
+      setSuggestions(data.suggestions || []);
       if (data.uiEvent) {
-        setUiEvent(data.uiEvent);
         if (data.uiEvent.type === 'AUTH_SUCCESS') {
           const { token: newToken, user: newUser } = data.uiEvent.data;
           setToken(newToken);
           setUser(newUser);
           localStorage.setItem('token', newToken);
           localStorage.setItem('user', JSON.stringify(newUser));
+          // Không gọi setUiEvent để giữ nguyên UI (ProductCard) trước đó
+        } else {
+          setUiEvent(data.uiEvent);
         }
       }
     });
@@ -91,6 +97,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const sendMessage = (text: string) => {
     if (isRateLimited || isTyping) return;
     setIsTyping(true);
+    setSuggestions([]); // Clear suggestions while waiting
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     if (socket) {
       socket.emit("sendMessage", { text, token });
@@ -106,7 +113,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ChatContext.Provider value={{ messages, sendMessage, uiEvent, isTyping, isRateLimited, cooldownRemaining, user, logout }}>
+    <ChatContext.Provider value={{ messages, sendMessage, uiEvent, isTyping, isRateLimited, cooldownRemaining, user, logout, suggestions }}>
       {children}
     </ChatContext.Provider>
   );

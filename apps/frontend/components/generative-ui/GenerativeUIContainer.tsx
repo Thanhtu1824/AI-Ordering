@@ -4,19 +4,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useChat } from "../chat/ChatContext";
 import { QuoteSummary } from "./QuoteSummary";
 import { ProductCard } from "./ProductCard";
+import { OrderConfirmation } from "./OrderConfirmation";
 
 export function GenerativeUIContainer() {
   const { uiEvent } = useChat();
 
   return (
     <div className="flex flex-col h-full bg-zinc-50 dark:bg-zinc-900">
-      <div className="p-8 border-b border-zinc-200 dark:border-zinc-800 flex-shrink-0">
-        <h1 className="text-3xl font-bold tracking-tight">Kết quả</h1>
+      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex-shrink-0 flex items-center h-16">
+        <h2 className="text-xl font-semibold tracking-tight">Kết quả</h2>
       </div>
 
       <div className="flex-1 overflow-y-auto p-8">
         <div className="max-w-4xl w-full mx-auto flex justify-center">
-          {uiEvent && uiEvent.type === 'QUOTE' ? (
+          {uiEvent && uiEvent.type === 'ORDER_CONFIRMATION' ? (
+            <OrderConfirmation {...uiEvent.data} />
+          ) : uiEvent && uiEvent.type === 'QUOTE' ? (
             <QuoteSummary {...uiEvent.data} />
           ) : uiEvent && uiEvent.type === 'PRODUCT_CARD' ? (
             Array.isArray(uiEvent.data) ? (

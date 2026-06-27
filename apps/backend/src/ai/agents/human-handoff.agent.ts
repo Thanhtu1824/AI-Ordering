@@ -22,7 +22,8 @@ export const createHumanHandoffAgent = () => {
       uiEvent: {
         type: 'HUMAN_HANDOFF',
         data: { status: 'pending_agent' }
-      }
+      },
+      suggestions: ["Xem trạng thái đơn hàng", "Tìm sản phẩm khác"],
     };
   };
 };
