@@ -8,6 +8,7 @@ export interface OrderConfirmationProps {
     id: string;
     totalAmount: number;
     shippingFee?: number;
+    importDuty?: number;
     tax?: number;
     isQuote?: boolean;
     items: {
@@ -22,14 +23,17 @@ export function OrderConfirmation({
     id,
     totalAmount,
     shippingFee,
+    importDuty,
     tax,
     isQuote,
     items,
     shippingAddress,
 }: OrderConfirmationProps) {
     const formatCurrency = (amount: number) => {
-        return amount.toLocaleString("vi-VN") + " VND";
+        return amount.toLocaleString("vi-VN") + " VNĐ";
     };
+
+    const subtotal = totalAmount - (tax || 0) - (importDuty || 0) - (shippingFee || 0);
 
     return (
         <Card className="w-full max-w-md border-2 border-emerald-100 shadow-md">
@@ -83,22 +87,24 @@ export function OrderConfirmation({
                 {/* Tổng tiền */}
                 <div className="space-y-2 text-sm text-slate-600 mb-4">
                     <div className="flex justify-between items-center">
-                        <span>Tạm tính</span>
+                        <span>Giá gốc sản phẩm</span>
                         <span className="font-medium">
-                            {(totalAmount - (tax || 0) - (shippingFee || 0)) > 0 
-                                ? formatCurrency(totalAmount - (tax || 0) - (shippingFee || 0)) 
-                                : "Chờ báo giá"}
+                            {subtotal > 0 ? formatCurrency(subtotal) : "Chờ báo giá"}
                         </span>
                     </div>
-                    {(tax !== undefined || shippingFee !== undefined) && (
+                    {!isQuote && (
                         <>
-                            <div className="flex justify-between items-center">
-                                <span>Thuế (10%)</span>
-                                <span className="font-medium">{formatCurrency(tax || 0)}</span>
-                            </div>
                             <div className="flex justify-between items-center">
                                 <span>Phí vận chuyển</span>
                                 <span className="font-medium">{formatCurrency(shippingFee || 0)}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span>Thuế nhập khẩu</span>
+                                <span className="font-medium">{formatCurrency(importDuty || 0)}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span>Thuế VAT</span>
+                                <span className="font-medium">{formatCurrency(tax || 0)}</span>
                             </div>
                         </>
                     )}
