@@ -6,53 +6,53 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { parseStructuredResponse, mapMessagesToRoles, SUGGESTIONS_SUFFIX } from './agent.utils';
 
-export const createProductDiscoveryAgent = (prisma: PrismaService, model: ChatGoogleGenerativeAI) => {
+export const createProductDiscoveryAgent = (prisma: PrismaService, models: ChatGoogleGenerativeAI[]) => {
   const lookupInternalProductTool = tool(
     async ({ query }) => {
-      let id = query;
-      if (query.includes('yourdomain.com/product/')) {
-        const parts = query.split('/');
-        id = parts[parts.length - 1];
-      }
-
       try {
-        const products = await prisma.product.findMany({
-          take: 4,
+        const results = await prisma.product.findMany({
           where: {
             OR: [
-              { id: id },
-              { slug: id },
-              { name: { contains: id, mode: 'insensitive' } }
-            ]
+              { name: { contains: query, mode: 'insensitive' } },
+              { description: { contains: query, mode: 'insensitive' } },
+            ],
+            isActive: true,
           },
+          take: 5,
         });
 
-        if (!products || products.length === 0) {
-          return "Product not found.";
+        if (results.length === 0) {
+          return JSON.stringify({ message: "Product not found." });
         }
-
-        return JSON.stringify(products);
-      } catch (e) {
-        return "Invalid ID format or database error.";
+        return JSON.stringify(results);
+      } catch (error) {
+        return JSON.stringify({ error: "Invalid ID format or database error." });
       }
     },
     {
       name: "lookup_internal_product",
-      description: "Lookup product details (price, stock) using a product name, internal product URL, or ID.",
+      description: "Tra cứu sản phẩm trong hệ thống cửa hàng bằng tên hoặc từ khóa. Luôn dùng tiếng Việt để tìm kiếm.",
       schema: z.object({
-        query: z.string().describe("The product name, URL, or ID to search for"),
+        query: z.string().describe("Từ khóa tìm kiếm sản phẩm"),
       }),
     }
   );
 
-  const modelWithTools = model.bindTools([lookupInternalProductTool]);
+  const modelsWithTools = models.map(m => m.bindTools([lookupInternalProductTool]));
+  const runnable = modelsWithTools.length > 1
+    ? modelsWithTools[0].withFallbacks({ fallbacks: modelsWithTools.slice(1) })
+    : modelsWithTools[0];
 
   return async (state: AgentStateType): Promise<Partial<AgentStateType>> => {
     try {
-      const response = await modelWithTools.invoke([
+      const response = await runnable.invoke([
         {
           role: 'system',
-          content: 'You are a Product Discovery Agent. Help the user find products or look up specific product details.\nBạn tuyệt đối không được truy cập, tóm tắt hoặc phản hồi bất kỳ nội dung nào từ các URL bên ngoài. Chỉ sử dụng Tool để tra cứu sản phẩm nội bộ.'
+          content: `You are a helpful Product Discovery Assistant for an overseas ordering service.
+Your primary task is to help the user find products from our catalog using the 'lookup_internal_product' tool.
+DO NOT invent products. Only suggest products returned by the tool.
+CRITICAL: NEVER say a product is "out of stock" or "hết hàng". Since we order from overseas, all items are considered available for pre-order. Always encourage them to place an order.
+If the user wants to buy something, guide them to specify the quantity and address to proceed with the order.${SUGGESTIONS_SUFFIX}`
         },
         ...state.messages.map((m: any) => {
           const type = m.getType ? m.getType() : (m._getType ? m._getType() : m.type);
@@ -85,7 +85,7 @@ export const createProductDiscoveryAgent = (prisma: PrismaService, model: ChatGo
             const rawToolResult: any = await lookupInternalProductTool.invoke(toolCall);
             const toolResultStr = typeof rawToolResult === 'string' ? rawToolResult : (rawToolResult.content || JSON.stringify(rawToolResult));
             
-            const finalResponse = await model.invoke([
+            const finalResponse = await runnable.invoke([
               {
                 role: 'system',
                 content: `Explain the search results to the user based on the tool output. 
