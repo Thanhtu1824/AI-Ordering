@@ -5,6 +5,7 @@ import { useChat } from "../chat/ChatContext";
 import { QuoteSummary } from "./QuoteSummary";
 import { ProductCard } from "./ProductCard";
 import { OrderConfirmation } from "./OrderConfirmation";
+import { Cart } from "./Cart";
 
 export function GenerativeUIContainer() {
   const { uiEvent } = useChat();
@@ -16,20 +17,24 @@ export function GenerativeUIContainer() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-4xl w-full mx-auto flex justify-center">
+        <div className="max-w-3xl w-full mx-auto flex justify-center">
           {uiEvent && uiEvent.type === 'ORDER_CONFIRMATION' ? (
             <OrderConfirmation {...uiEvent.data} />
+          ) : uiEvent && uiEvent.type === 'CART' ? (
+            <Cart {...uiEvent.data} />
           ) : uiEvent && uiEvent.type === 'QUOTE' ? (
             <QuoteSummary {...uiEvent.data} />
           ) : uiEvent && uiEvent.type === 'PRODUCT_CARD' ? (
             Array.isArray(uiEvent.data) ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 gap-6 w-full">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
                 {uiEvent.data.map((product: any) => (
                   <ProductCard key={product.id} {...product} />
                 ))}
               </div>
             ) : (
-              <ProductCard {...uiEvent.data} />
+              <div className="w-full max-w-sm mx-auto">
+                <ProductCard {...uiEvent.data} />
+              </div>
             )
           ) : (
             <Card className="w-full shadow-sm border-zinc-200 dark:border-zinc-800">

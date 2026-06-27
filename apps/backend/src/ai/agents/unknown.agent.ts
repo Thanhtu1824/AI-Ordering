@@ -3,11 +3,15 @@ import { AgentStateType } from '../state/agent.state';
 import { AIMessage } from '@langchain/core/messages';
 import { parseStructuredResponse, mapMessagesToRoles, SUGGESTIONS_SUFFIX } from './agent.utils';
 
-export const createUnknownAgent = (model: ChatGoogleGenerativeAI) => {
+export const createUnknownAgent = (models: ChatGoogleGenerativeAI[]) => {
+  const runnable = models.length > 1
+    ? models[0].withFallbacks({ fallbacks: models.slice(1) })
+    : models[0];
+
   return async (state: AgentStateType): Promise<Partial<AgentStateType>> => {
     // This handles chitchat or unclear intents.
     try {
-      const response = await model.invoke([
+      const response = await runnable.invoke([
         {
           role: 'system',
           content: `You are a helpful AI assistant for an E-commerce store. Answer general questions briefly. If you do not understand what the user wants to buy, ask them directly what product they are looking for.

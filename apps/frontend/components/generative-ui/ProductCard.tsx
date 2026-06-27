@@ -25,7 +25,7 @@ export function ProductCard(product: ProductData) {
   return (
     <Card className="w-full h-full shadow-md hover:shadow-lg transition-all duration-300 border-zinc-200 dark:border-zinc-800 overflow-hidden group bg-white dark:bg-zinc-950 flex flex-col">
       {/* Image Section */}
-      <div className="relative aspect-square w-full bg-zinc-100 dark:bg-zinc-900 overflow-hidden shrink-0">
+      <div className="relative aspect-[4/3] w-full bg-zinc-100 dark:bg-zinc-900 overflow-hidden shrink-0">
         {product.imageUrl ? (
           <img
             src={product.imageUrl}
@@ -45,19 +45,13 @@ export function ProductCard(product: ProductData) {
               {product.brand}
             </Badge>
           )}
-          {product.stock > 0 ? (
-            <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-200 dark:border-emerald-800 text-[10px] px-2 py-0.5">
-              Còn {product.stock}
-            </Badge>
-          ) : (
-            <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-200 text-[10px] px-2 py-0.5">
-              Hết hàng
-            </Badge>
-          )}
+          <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-200 dark:border-emerald-800 text-[10px] px-2 py-0.5">
+            Order ngay
+          </Badge>
         </div>
       </div>
 
-      <CardHeader className="p-4 pb-2 shrink-0">
+      <CardHeader className="p-3 pb-1 shrink-0">
         <div className="flex flex-col gap-1">
           <CardTitle className="text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50 leading-tight line-clamp-2">
             {product.name}
@@ -78,8 +72,8 @@ export function ProductCard(product: ProductData) {
         </div>
       </CardHeader>
 
-      <CardContent className="p-4 pt-2 flex-1">
-        <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed text-xs line-clamp-3">
+      <CardContent className="p-3 pt-1 flex-1">
+        <p className="text-zinc-600 dark:text-zinc-400 leading-relaxed text-xs line-clamp-2">
           {product.description || "Chưa có thông tin mô tả cho sản phẩm này."}
         </p>
         
@@ -91,17 +85,16 @@ export function ProductCard(product: ProductData) {
         </div>
       </CardContent>
 
-      <CardFooter className="bg-zinc-50 dark:bg-zinc-900/50 p-4 shrink-0 mt-auto">
+      <CardFooter className="bg-zinc-50 dark:bg-zinc-900/50 p-3 shrink-0 mt-auto">
         <Button 
-          className="w-full rounded-lg h-10 text-sm font-semibold shadow-sm hover:shadow transition-all"
-          disabled={product.stock <= 0}
+          className="w-full rounded-lg h-10 text-sm font-semibold shadow-sm hover:shadow transition-all bg-emerald-600 hover:bg-emerald-700 text-white"
           onClick={() => {
             // Future integration with the chat input
             alert(`Đã thêm ${product.name} vào giỏ hàng giả lập!`);
           }}
         >
           <ShoppingCart className="w-5 h-5 mr-2" />
-          {product.stock > 0 ? "Thêm vào giỏ hàng" : "Tạm hết hàng"}
+          Thêm vào giỏ hàng
         </Button>
       </CardFooter>
     </Card>
