@@ -71,6 +71,11 @@ model Product {
   originalPrice Float?      // Giá gốc ngoại tệ
   currency      String      @default("VND") // Đơn vị tiền tệ (CNY, USD, v.v.)
   weight        Float?      // Cân nặng thực tế (kg)
+  length        Float?      // Chiều dài (cm)
+  width         Float?      // Chiều rộng (cm)
+  height        Float?      // Chiều cao (cm)
+  importDutyRate Float      @default(0) // Thuế suất nhập khẩu (vd: 0.13)
+  vatRate       Float       @default(0.1) // Thuế VAT (vd: 0.08 hoặc 0.1)
 
   imageUrl      String?
   isActive      Boolean     @default(true)
@@ -88,7 +93,8 @@ model Order {
   status          OrderState    @default(PENDING)
   totalAmount     Float
   shippingFee     Float         @default(0)
-  tax             Float         @default(0)
+  importDuty      Float         @default(0)
+  tax             Float         @default(0) // Dùng làm trường VAT
   paymentMethod   PaymentMethod @default(CASH_ON_DELIVERY)
   paymentStatus   PaymentStatus @default(PENDING)
   shippingAddress String?
