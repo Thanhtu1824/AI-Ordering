@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { AuthService } from '../../auth/auth.service';
 import { parseStructuredResponse, mapMessagesToRoles, SUGGESTIONS_SUFFIX } from './agent.utils';
 
-export const createAuthAgent = (authService: AuthService, model: ChatGoogleGenerativeAI) => {
+export const createAuthAgent = (authService: AuthService, models: ChatGoogleGenerativeAI[]) => {
   const registerTool = tool(
     async ({ name, phone, password }) => {
       const result = await authService.registerUser(name, phone, password);
@@ -38,11 +38,14 @@ export const createAuthAgent = (authService: AuthService, model: ChatGoogleGener
     }
   );
 
-  const modelWithTools = model.bindTools([registerTool, loginTool]);
+  const modelsWithTools = models.map(m => m.bindTools([registerTool, loginTool]));
+  const runnable = modelsWithTools.length > 1
+    ? modelsWithTools[0].withFallbacks({ fallbacks: modelsWithTools.slice(1) })
+    : modelsWithTools[0];
 
   return async (state: AgentStateType): Promise<Partial<AgentStateType>> => {
     try {
-      const response = await modelWithTools.invoke([
+      const response = await runnable.invoke([
         {
           role: 'system',
           content: `You are an Authentication Agent. 
@@ -88,7 +91,7 @@ Do not make up fake details.${SUGGESTIONS_SUFFIX}`
               uiEvent = { type: 'AUTH_SUCCESS', data: { token: parsedResult.token, user: parsedResult.user } };
             }
 
-            const finalResponse = await model.invoke([
+            const finalResponse = await runnable.invoke([
               {
                 role: 'system',
                 content: `Explain the tool result to the user naturally in Vietnamese. If successful, welcome them. If failed, explain why.${SUGGESTIONS_SUFFIX}`

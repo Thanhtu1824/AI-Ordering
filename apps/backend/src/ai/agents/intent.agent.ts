@@ -17,11 +17,15 @@ const IntentSchema = z.object({
   ]).describe('The primary intent of the user based on their last message.'),
 });
 
-export const createIntentAgent = (model: ChatGoogleGenerativeAI) => {
+export const createIntentAgent = (models: ChatGoogleGenerativeAI[]) => {
   // Bind the model to strictly output the JSON structure we want
-  const structuredModel = model.withStructuredOutput(IntentSchema, {
+  const structuredModels = models.map(m => m.withStructuredOutput(IntentSchema, {
     name: 'detect_intent',
-  });
+  }));
+
+  const structuredModel = structuredModels.length > 1
+    ? structuredModels[0].withFallbacks({ fallbacks: structuredModels.slice(1) })
+    : structuredModels[0];
 
   return async (state: AgentStateType): Promise<Partial<AgentStateType>> => {
     const messages = state.messages;
