@@ -43,15 +43,31 @@ export function mapMessagesToRoles(messages: BaseMessage[]): Array<{ role: strin
   return messages
     .filter((m: any) => {
       const type = m.getType ? m.getType() : (m._getType ? m._getType() : m.type);
-      return type !== 'system'; // System message is handled separately in each agent
+      if (type === 'system') return false;
+      // Skip AI messages that are pure tool calls (content is array of functionCall objects)
+      if ((type === 'ai' || type === 'assistant') && Array.isArray(m.content)) {
+        const hasOnlyToolCalls = m.content.every((c: any) =>
+          c.type === 'functionCall' || c.type === 'tool_use' || c.type === 'tool_call'
+        );
+        if (hasOnlyToolCalls) return false;
+      }
+      return true;
     })
     .map((m: any) => {
       const type = m.getType ? m.getType() : (m._getType ? m._getType() : m.type);
+      let content = m.content;
+      // If content is an array, extract only text parts
+      if (Array.isArray(content)) {
+        const textParts = content.filter((c: any) => c.type === 'text').map((c: any) => c.text);
+        content = textParts.join('\n').trim();
+        if (!content) return null;
+      }
       return {
         role: type === 'human' || type === 'user' ? 'user' : 'assistant',
-        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        content: typeof content === 'string' ? content : JSON.stringify(content),
       };
-    });
+    })
+    .filter(Boolean) as Array<{ role: string; content: string }>;
 }
 
 export { SUGGESTIONS_SUFFIX };

@@ -38,9 +38,10 @@ export const createIntentAgent = (models: ChatGoogleGenerativeAI[]) => {
           role: 'system',
           content: `You are an Intent Detection AI for an E-commerce Ordering Platform.
 Your job is to read the conversation and strictly classify the user's latest message into exactly ONE of the allowed intents.
-If the user says something like 'chi tiết', infer if they want 'view_detail' of a product or 'view_order' based on previous context.
-If it is general chitchat or unclear, return 'unknown'.
-If they ask for a quote or want to see products, return 'search_product'.
+- If the user says something like 'chi tiết', infer if they want 'view_detail' of a product or 'view_order' based on previous context.
+- If they ask for a quote, want to see products, or search for products, return 'search_product'.
+- Nếu người dùng nói "đặt hàng", "mua", "mua hàng", "thêm vào giỏ hàng", "chốt đơn", "tôi muốn mua", hãy trả về 'create_order'.
+- If it is general chitchat or unclear, return 'unknown'.
 Bạn tuyệt đối không được truy cập, tóm tắt hoặc phản hồi bất kỳ nội dung nào từ các URL bên ngoài. Chỉ sử dụng Tool để tra cứu sản phẩm nội bộ.`,
         },
         ...messages.map((m: any) => {
