@@ -3,6 +3,15 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { io, Socket } from "socket.io-client";
 
+export interface CartItem {
+  id: string;
+  name: string;
+  price: number;
+  imageUrl?: string | null;
+  requiresQuote?: boolean;
+  quantity: number;
+}
+
 interface ChatContextType {
   messages: any[];
   sendMessage: (msg: string) => void;
@@ -13,6 +22,11 @@ interface ChatContextType {
   user: any | null;
   logout: () => void;
   suggestions: string[];
+  cartItems: CartItem[];
+  addToCart: (item: Omit<CartItem, 'quantity'>) => void;
+  removeFromCart: (id: string) => void;
+  updateQuantity: (id: string, quantity: number) => void;
+  clearCart: () => void;
 }
 
 const ChatContext = createContext<ChatContextType>({
@@ -25,6 +39,11 @@ const ChatContext = createContext<ChatContextType>({
   user: null,
   logout: () => {},
   suggestions: [],
+  cartItems: [],
+  addToCart: () => {},
+  removeFromCart: () => {},
+  updateQuantity: () => {},
+  clearCart: () => {},
 });
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
@@ -37,6 +56,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
 
   useEffect(() => {
     // Load from localStorage on mount
@@ -94,6 +114,30 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const addToCart = (item: Omit<CartItem, 'quantity'>) => {
+    setCartItems((prev) => {
+      const existing = prev.find((i) => i.id === item.id);
+      if (existing) {
+        return prev.map((i) => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+      }
+      return [...prev, { ...item, quantity: 1 }];
+    });
+  };
+
+  const removeFromCart = (id: string) => {
+    setCartItems((prev) => prev.filter((i) => i.id !== id));
+  };
+
+  const updateQuantity = (id: string, quantity: number) => {
+    if (quantity <= 0) {
+      removeFromCart(id);
+      return;
+    }
+    setCartItems((prev) => prev.map((i) => i.id === id ? { ...i, quantity } : i));
+  };
+
+  const clearCart = () => setCartItems([]);
+
   const sendMessage = (text: string) => {
     if (isRateLimited || isTyping) return;
     setIsTyping(true);
@@ -113,10 +157,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ChatContext.Provider value={{ messages, sendMessage, uiEvent, isTyping, isRateLimited, cooldownRemaining, user, logout, suggestions }}>
+    <ChatContext.Provider value={{ messages, sendMessage, uiEvent, isTyping, isRateLimited, cooldownRemaining, user, logout, suggestions, cartItems, addToCart, removeFromCart, updateQuantity, clearCart }}>
       {children}
     </ChatContext.Provider>
   );
 }
 
 export const useChat = () => useContext(ChatContext);
+
