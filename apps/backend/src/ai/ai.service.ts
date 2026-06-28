@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AgentState, AgentStateType } from './state/agent.state';
 import { createIntentAgent } from './agents/intent.agent';
 import { createProductDiscoveryAgent } from './agents/product-discovery.agent';
-import { createQuoteAgent } from './agents/quote.agent';
+import { createOrderAgent } from './agents/order.agent';
 import { createHumanHandoffAgent } from './agents/human-handoff.agent';
 import { createUnknownAgent } from './agents/unknown.agent';
 import { createAuthAgent } from './agents/auth.agent';
@@ -17,54 +17,66 @@ import { AuthService } from '../auth/auth.service';
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
-  private model!: ChatGoogleGenerativeAI;
+  private models: ChatGoogleGenerativeAI[] = [];
   private app: any;
 
   constructor(private readonly prisma: PrismaService, private readonly authService: AuthService) {
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      this.logger.error('GOOGLE_API_KEY is not set. AI features will be unavailable.');
+    const keyString = process.env.GOOGLE_API_KEYS || process.env.GOOGLE_API_KEY || '';
+    const keys = keyString.split(',').map(k => k.trim()).filter(Boolean);
+
+    if (keys.length === 0) {
+      this.logger.error('No GOOGLE_API_KEY or GOOGLE_API_KEYS provided. AI features will be unavailable.');
     } else {
       try {
-        this.model = new ChatGoogleGenerativeAI({
-          model: 'gemini-2.5-flash',
-          temperature: 0,
-          safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-          ],
+        this.models = keys.map((apiKey, index) => {
+          const model = new ChatGoogleGenerativeAI({
+            apiKey,
+            model: 'gemini-2.5-flash',
+            temperature: 0,
+            safetySettings: [
+              { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+              { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+              { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+              { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+            ],
+          });
+          this.logger.log(`ChatGoogleGenerativeAI (Key ${index + 1}) initialized successfully.`);
+          return model;
         });
-        this.logger.log('ChatGoogleGenerativeAI initialized successfully.');
       } catch (e) {
-        this.logger.error('Failed to initialize ChatGoogleGenerativeAI.', e);
+        this.logger.error('Failed to initialize ChatGoogleGenerativeAI models.', e);
       }
     }
 
-    if (this.model) {
+    if (this.models.length > 0) {
       this.initGraph();
     } else {
-      this.logger.warn('LangGraph will not be initialized because the AI model is unavailable.');
+      this.logger.warn('LangGraph will not be initialized because no AI models are available.');
     }
+  }
+
+  private getRotatedModels(startIndex: number): ChatGoogleGenerativeAI[] {
+    if (this.models.length === 0) return [];
+    const index = startIndex % this.models.length;
+    return [...this.models.slice(index), ...this.models.slice(0, index)];
   }
 
   private initGraph() {
     // We explicitly cast to any here to bypass strict Type limitations when building
     const workflow = new StateGraph(AgentState) as any;
 
-    // Initialize the specialized agents
-    const intentAgent = createIntentAgent(this.model);
-    const productDiscoveryAgent = createProductDiscoveryAgent(this.prisma, this.model);
-    const quoteAgent = createQuoteAgent();
+    // Initialize the specialized agents with Round-Robin Load Balancing
+    const intentAgent = createIntentAgent(this.getRotatedModels(0));
+    const productDiscoveryAgent = createProductDiscoveryAgent(this.prisma, this.getRotatedModels(1));
+    const orderAgent = createOrderAgent(this.prisma, this.getRotatedModels(2));
     const humanHandoffAgent = createHumanHandoffAgent();
-    const unknownAgent = createUnknownAgent(this.model);
-    const authAgent = createAuthAgent(this.authService, this.model);
+    const unknownAgent = createUnknownAgent(this.getRotatedModels(3));
+    const authAgent = createAuthAgent(this.authService, this.getRotatedModels(4));
 
     // Add Nodes
     workflow.addNode('detectIntent', intentAgent);
     workflow.addNode('productDiscovery', productDiscoveryAgent);
-    workflow.addNode('generateQuote', quoteAgent);
+    workflow.addNode('createOrder', orderAgent);
     workflow.addNode('humanHandoff', humanHandoffAgent);
     workflow.addNode('generalChat', unknownAgent);
     workflow.addNode('auth', authAgent);
@@ -85,8 +97,7 @@ export class AiService {
           return 'productDiscovery';
         case 'create_order':
         case 'payment':
-          // We map these to quote for now as a stepping stone
-          return 'generateQuote';
+          return 'createOrder';
         case 'complaint':
         case 'cancel_request':
           return 'humanHandoff';
@@ -97,7 +108,7 @@ export class AiService {
 
     // 3. All endpoint nodes go to END
     workflow.addEdge('productDiscovery', END);
-    workflow.addEdge('generateQuote', END);
+    workflow.addEdge('createOrder', END);
     workflow.addEdge('humanHandoff', END);
     workflow.addEdge('generalChat', END);
     workflow.addEdge('auth', END);
@@ -123,7 +134,7 @@ export class AiService {
         : new SystemMessage(`The current user is a guest and not logged in.`);
 
       const finalState = await this.app.invoke(
-        { messages: [systemMessage, new HumanMessage(message)] },
+        { messages: [systemMessage, new HumanMessage(message)], currentUser: user },
         config
       );
 
@@ -135,13 +146,15 @@ export class AiService {
 
       return {
         text: lastAiMessage,
-        uiEvent: finalState.uiEvent || null
+        uiEvent: finalState.uiEvent || null,
+        suggestions: finalState.suggestions || [],
       };
     } catch (error) {
       this.logger.error('Error processing message in LangGraph', error);
       return {
         text: 'Xin lỗi, hệ thống AI đang gặp sự cố. Vui lòng kiểm tra lại cấu hình hệ thống.',
-        uiEvent: null
+        uiEvent: null,
+        suggestions: [],
       };
     }
   }

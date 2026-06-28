@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useChat } from "./ChatContext";
 import { LogOut } from "lucide-react";
-
+import { CartDropdown } from "../generative-ui/CartDropdown";
 import ReactMarkdown from 'react-markdown';
 
 export function ChatInterface() {
-  const { messages, sendMessage, isTyping, isRateLimited, cooldownRemaining, user, logout } = useChat();
+  const { messages, sendMessage, isTyping, isRateLimited, cooldownRemaining, user, logout, suggestions } = useChat();
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -29,16 +29,19 @@ export function ChatInterface() {
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800">
-      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex-shrink-0 flex justify-between items-center">
+      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex-shrink-0 flex justify-between items-center h-16">
         <h2 className="text-lg font-semibold tracking-tight">Trợ lý Đặt hàng AI</h2>
-        {user && (
-          <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
-            <span>Chào, <b className="text-zinc-900 dark:text-zinc-100">{user.name}</b></span>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950" onClick={logout} title="Đăng xuất">
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <CartDropdown />
+          {user && (
+            <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
+              <span>Chào, <b className="text-zinc-900 dark:text-zinc-100">{user.name}</b></span>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950" onClick={logout} title="Đăng xuất">
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
@@ -66,6 +69,20 @@ export function ChatInterface() {
                   <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                 </div>
               </div>
+            </div>
+          )}
+          {!isTyping && suggestions.length > 0 && (
+            <div className="flex flex-wrap gap-2 pl-1">
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  onClick={() => sendMessage(s)}
+                  disabled={isRateLimited}
+                  className="text-sm px-3 py-1.5 rounded-full border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:border-zinc-400 transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  {s}
+                </button>
+              ))}
             </div>
           )}
           <div ref={messagesEndRef} />
