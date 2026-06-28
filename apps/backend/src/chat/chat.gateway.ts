@@ -16,11 +16,13 @@ export class ChatGateway {
   private redis: Redis;
 
   constructor(private readonly aiService: AiService, private readonly authService: AuthService) {
-    // Connect to Redis using default port exposed by docker-compose
-    this.redis = new Redis({
-      host: 'localhost',
-      port: 6379,
-    });
+    // Connect to Redis via REDIS_URL env variable (Upstash or local)
+    const redisUrl = process.env.REDIS_URL;
+    if (redisUrl) {
+      this.redis = new Redis(redisUrl);
+    } else {
+      this.redis = new Redis({ host: 'localhost', port: 6379 });
+    }
   }
 
   @SubscribeMessage('sendMessage')
@@ -87,8 +89,9 @@ export class ChatGateway {
     // Send typing indicator
     client.emit('typing', true);
     
-    // Process with AI – use client.id as sessionId to maintain per-user conversation context
-    const result = await this.aiService.processMessage(normalizedData, client.id, user);
+    // Process with AI – use userId as sessionId (persistent) or client.id for guests
+    const sessionId = user?.sub ? `user-${user.sub}` : `guest-${client.id}`;
+    const result = await this.aiService.processMessage(normalizedData, sessionId, user);
     
     // Send back the AI response
     client.emit('aiResponse', result);
