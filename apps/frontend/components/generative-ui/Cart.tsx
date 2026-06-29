@@ -51,9 +51,9 @@ export function Cart({ items, subtotal, importDuty, tax, shippingFee, total, isQ
       </CardHeader>
 
       <CardContent className="pt-6">
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[35vh] overflow-y-auto pr-2 custom-scrollbar">
           {items.map((item, index) => (
-            <div key={item.id || index} className="flex items-start gap-4 p-3 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+            <div key={item.id || index} className="flex items-start gap-4 p-3 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800">
               <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-md overflow-hidden flex-shrink-0">
                 {item.imageUrl ? (
                   <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />

@@ -4,8 +4,8 @@ import { BaseMessage } from '@langchain/core/messages';
 const SUGGESTIONS_SUFFIX = `
 
 ---
-Cuối mỗi phản hồi, hãy thêm một dòng bắt đầu bằng "|||SUGGESTIONS:" và theo sau là một JSON array chứa 2-3 gợi ý ngắn (mỗi gợi ý tối đa 8 từ, bằng tiếng Việt) mà người dùng có thể muốn làm tiếp theo, dựa trên ngữ cảnh cuộc hội thoại và các chức năng của hệ thống (tìm sản phẩm, đặt hàng, đăng nhập...).
-Ví dụ: |||SUGGESTIONS:["Đặt hàng ngay", "Xem thêm sản phẩm", "Kiểm tra đơn hàng"]|||`;
+At the end of every response, append a line starting with "|||SUGGESTIONS:" followed by a JSON array of 2-3 short suggestions (max 8 words each, in Vietnamese) that the user might want to do next, based on the conversation context and system features (find products, place order, login...).
+Example: |||SUGGESTIONS:["Dat hang ngay", "Xem them san pham", "Kiem tra don hang"]|||`;
 
 /**
  * Extracts the visible text and suggestions from a raw AI response string.

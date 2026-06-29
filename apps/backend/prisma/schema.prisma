@@ -111,6 +111,7 @@ model OrderItem {
   order     Order    @relation(fields: [orderId], references: [id])
   productId String
   product   Product  @relation(fields: [productId], references: [id])
+  productName String? // Tên sản phẩm lưu lại tại thời điểm đặt hàng
   quantity  Int
   price     Float // Giá tại thời điểm mua
   discount  Float    @default(0)

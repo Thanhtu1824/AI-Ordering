@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useChat } from "./ChatContext";
-import { LogOut } from "lucide-react";
+import { LogOut, ClipboardList } from "lucide-react";
 import { CartDropdown } from "../generative-ui/CartDropdown";
 import ReactMarkdown from 'react-markdown';
 
@@ -34,7 +34,16 @@ export function ChatInterface() {
         <div className="flex items-center gap-2">
           <CartDropdown />
           {user && (
-            <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
+            <div className="flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400 border-l border-zinc-200 pl-3">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8 text-zinc-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950" 
+                onClick={() => sendMessage("Xem đơn hàng của tôi")} 
+                title="Đơn hàng"
+              >
+                <ClipboardList className="h-4 w-4" />
+              </Button>
               <span>Chào, <b className="text-zinc-900 dark:text-zinc-100">{user.name}</b></span>
               <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950" onClick={logout} title="Đăng xuất">
                 <LogOut className="h-4 w-4" />
