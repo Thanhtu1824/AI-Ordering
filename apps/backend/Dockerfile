@@ -12,6 +12,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
+RUN apk add --no-cache openssl libc6-compat
 RUN npm install --omit=dev
 RUN npx prisma generate
 COPY --from=builder /app/dist ./dist
