@@ -77,6 +77,7 @@ export const createOrderAgent = (prisma: PrismaService, models: ChatGoogleGenera
               data: {
                 orderId: order.id,
                 productId: validItem.product.id,
+                productName: validItem.product.name,
                 quantity: validItem.quantity,
                 price: validItem.product.price,
               }
@@ -228,20 +229,39 @@ export const createOrderAgent = (prisma: PrismaService, models: ChatGoogleGenera
     const userId = state.currentUser.sub;
 
     try {
+      // Lấy thông tin user từ DB để biết họ đã có địa chỉ chưa
+      const dbUser = await prisma.user.findUnique({ where: { id: userId } });
+      const userAddress = dbUser?.address;
+
+      const focusedProduct = state.focusedEntity;
+      const hasFocused = focusedProduct != null && (Array.isArray(focusedProduct) ? focusedProduct.length > 0 : true);
+      console.log('[OrderAgent] focusedEntity:', JSON.stringify(focusedProduct));
+      console.log('[OrderAgent] viewedProducts:', JSON.stringify(state.viewedProducts));
+
       const response = await runnable.invoke([
         {
           role: 'system',
           content: `Bạn là trợ lý đặt hàng từ nước ngoài. ID của khách hàng hiện tại là ${userId}.
+${userAddress ? `\nĐỊA CHỈ GIAO HÀNG ĐÃ LƯU: "${userAddress}".\n=> KHÁCH ĐÃ CÓ ĐỊA CHỈ. Bạn KHÔNG cần hỏi lại địa chỉ nữa. Khi khách xác nhận đặt hàng, hãy gọi tool \`create_order\` và truyền địa chỉ này vào.` : '\n=> KHÁCH CHƯA CÓ ĐỊA CHỈ. Bạn phải yêu cầu khách cung cấp địa chỉ chi tiết trước khi đặt hàng.'}
+${hasFocused
+  ? `CONTEXT - SẢN PHẨM ĐANG ĐƯỢC XEM TRÊN MÀN HÌNH:\n${JSON.stringify(Array.isArray(focusedProduct) ? focusedProduct : [focusedProduct], null, 2)}\n`
+  : ''}
 Nhiệm vụ của bạn là gom danh sách các món hàng (tên và số lượng) và địa chỉ giao hàng mà khách yêu cầu.
-QUAN TRỌNG NHẤT: Đây là hàng order, KHÔNG BAO GIỜ báo "hết hàng". Dù không thấy số lượng tồn kho, luôn nói khách có thể đặt được.
-QUAN TRỌNG: TUYỆT ĐỐI KHÔNG gọi tool create_order ngay. Khi khách yêu cầu mua hàng, bạn PHẢI gọi tool preview_order để tra cứu thông tin và hiển thị sản phẩm lên màn hình.
-NẾU KHÁCH NÓI "THÊM VÀO GIỎ HÀNG" HOẶC "ĐẶT HÀNG" MÀ CHƯA NÓI RÕ LÀ SẢN PHẨM NÀO: Hãy phản hồi lại và hỏi khách hàng "Bạn muốn đặt sản phẩm nào ạ?". Không gọi tool nếu không có tên sản phẩm.
-KHI KHÁCH CUNG CẤP ĐỊA CHỈ GIAO HÀNG: Phải gọi tool save_user_address ngay lập tức để lưu lại.
-Sau khi gọi preview_order và đã có địa chỉ:
-- Nếu là đơn hàng bình thường, hỏi "Bạn có xác nhận đặt đơn hàng này không?".
-- Nếu là đơn hàng báo giá, hỏi "Đơn hàng này cần liên hệ báo giá, bạn có muốn gửi yêu cầu không?".
-Chỉ khi nào khách hàng chat ĐỒNG Ý / XÁC NHẬN, bạn mới được phép gọi tool create_order.
-Lưu ý: Luôn truyền ${userId} vào tham số userId của tool.${SUGGESTIONS_SUFFIX}`
+QUAN TRỌNG NHẤT: Đây là hàng order, KHÔNG BAO GIỜ báo "hết hàng".
+
+QUY TẮC XỬ LÝ GIỎ HÀNG:
+1. Nếu khách nói "thêm vào giỏ hàng" / "mua cái này" / "đặt cái đó" mà KHÔNG nói tên cụ thể:
+   - Nếu có SẢN PHẨM ĐANG ĐƯỢC XEM (CONTEXT ở trên), hãy sử dụng ngay tên sản phẩm đó và hỏi "Bạn muốn đặt bao nhiêu cái [tên sản phẩm] ạ?"
+   - Nếu KHÔNG có sản phẩm nào đang xem, hỏi "Bạn muốn đặt sản phẩm nào ạ?"
+2. Nếu khách nói "thêm 2 cái" / "lấy 3 cái" / "cho tôi 2" mà KHÔNG nói tên:
+   - Sử dụng SẢN PHẨM ĐANG ĐƯỢC XEM (CONTEXT) + số lượng khách vừa nói, gọi ngay preview_order
+3. Nếu khách nói cả tên VÀ số lượng (vd: "thêm 2 cái laptop"): gọi preview_order ngay
+4. Nếu khách nói nhiều sản phẩm (vd: "1 laptop và 2 chuột"): gọi preview_order với cả danh sách trong 1 lần gọi
+
+TUYỆT ĐỐI KHÔNG gọi create_order ngay. Phải gọi preview_order trước.
+KHI KHÁCH CUNG CẤP ĐỊA CHỈ GIAO HÀNG: Gọi tool save_user_address ngay lập tức.
+Sau khi preview_order, hỏi xác nhận. Chỉ gọi create_order khi khách ĐỒNG Ý / XÁC NHẬN.
+Luôn truyền ${userId} vào tham số userId của tool.${SUGGESTIONS_SUFFIX}`
         },
         ...mapMessagesToRoles(state.messages),
       ]);
@@ -287,14 +307,15 @@ Lưu ý: Luôn truyền ${userId} vào tham số userId của tool.${SUGGESTIONS
               {
                 role: 'system',
                 content: toolCall.name === 'create_order'
-                  ? `Thông báo kết quả đặt hàng cho người dùng.
-Nếu thành công:
-- Nếu parsedResult.isQuote là true (đơn hàng cần báo giá): BẮT BUỘC thông báo rằng yêu cầu đã được ghi nhận và bạn ĐANG CHUYỂN NGAY cuộc trò chuyện này cho nhân viên tư vấn để trao đổi trực tiếp với khách hàng về giá cả.
-- Nếu đơn hàng bình thường: Hãy nói đơn hàng đã được ghi nhận.
-Nếu thất bại: Giải thích lý do (như không tìm thấy sản phẩm).${SUGGESTIONS_SUFFIX}`
+                  ? `Report the order result to the customer in Vietnamese.
+If successful:
+- The order ID is long (UUID format). ALWAYS shorten it to only the first 8 uppercase characters prefixed with '#'. Example: if id is '8fe9b653-29a9-45c2-baa5-3a55916361d8', show '#8FE9B653'.
+- If parsedResult.isQuote is true (order requires quote): MUST inform the customer that their request has been recorded (show the short order ID) and you are IMMEDIATELY transferring this conversation to a sales consultant to discuss pricing directly.
+- If it is a normal order: Confirm the order has been placed successfully and show the short order ID.
+If failed: Explain the reason (e.g. product not found).${SUGGESTIONS_SUFFIX}`
                   : toolCall.name === 'save_user_address'
-                    ? `Xác nhận với người dùng rằng bạn đã lưu địa chỉ giao hàng thành công. Hỏi tiếp xem họ có muốn chốt đơn không.${SUGGESTIONS_SUFFIX}`
-                    : `Thông báo rằng bạn đã hiển thị thông tin chi tiết các sản phẩm lên màn hình để khách tham khảo. Nhắc khách xem và xác nhận nếu muốn chốt đơn.${SUGGESTIONS_SUFFIX}`
+                    ? `Confirm to the customer in Vietnamese that you have saved their shipping address successfully. Ask if they would like to proceed with placing the order.${SUGGESTIONS_SUFFIX}`
+                    : `Inform the customer in Vietnamese that you have added the item(s) to their cart and displayed the detailed cost breakdown (including shipping and taxes) on the screen. Ask them to confirm if they want to proceed with the order.${SUGGESTIONS_SUFFIX}`
               },
               ...mapMessagesToRoles(state.messages),
               response,

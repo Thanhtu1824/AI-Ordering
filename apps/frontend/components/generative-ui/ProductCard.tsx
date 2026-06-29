@@ -101,7 +101,7 @@ export function ProductCard(product: ProductData) {
         <div className="flex items-center gap-4 mt-2 text-[10px] text-zinc-500">
           <div className="flex items-center gap-1">
             <Tag className="w-3 h-3" />
-            <span>Mã: {product.slug?.substring(0,8) || product.id.substring(0,8)}</span>
+            <span>Mã: {product.slug?.substring(0,8) || product.id?.substring(0,8) || "N/A"}</span>
           </div>
         </div>
       </CardContent>

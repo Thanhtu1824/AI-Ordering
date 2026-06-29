@@ -51,8 +51,10 @@ export const createProductDiscoveryAgent = (prisma: PrismaService, models: ChatG
           content: `You are a helpful Product Discovery Assistant for an overseas ordering service.
 Your primary task is to help the user find products from our catalog using the 'lookup_internal_product' tool.
 DO NOT invent products. Only suggest products returned by the tool.
-CRITICAL: NEVER say a product is "out of stock" or "hết hàng". Since we order from overseas, all items are considered available for pre-order. Always encourage them to place an order.
-If the user wants to buy something, guide them to specify the quantity and address to proceed with the order.${SUGGESTIONS_SUFFIX}`
+CRITICAL: NEVER say a product is "out of stock" or unavailable. Since we order from overseas, all items are available for pre-order. Always encourage the customer to place an order.
+If the user wants to buy something, help them specify the product name and quantity, then guide them to the ordering step.
+If the user asks to see more products, or says things like "tìm sản phẩm khác", "tiếp tục mua hàng", "gợi ý", MUST PROACTIVELY call 'lookup_internal_product' tool with a generic query like "a" or "e" to show some random products. DO NOT just ask them what they want without showing anything.
+ALWAYS respond to the customer in Vietnamese.${SUGGESTIONS_SUFFIX}`
         },
         ...state.messages.map((m: any) => {
           const type = m.getType ? m.getType() : (m._getType ? m._getType() : m.type);
@@ -88,9 +90,9 @@ If the user wants to buy something, guide them to specify the quantity and addre
             const finalResponse = await runnable.invoke([
               {
                 role: 'system',
-                content: `Explain the search results to the user based on the tool output. 
-Nếu tìm thấy sản phẩm, hãy tóm tắt ngắn gọn và hỏi xem họ có muốn mua không.
-Nếu không tìm thấy, hãy xin lỗi và gợi ý họ tìm sản phẩm khác.${SUGGESTIONS_SUFFIX}`
+                content: `Summarize the product search results for the customer and respond in Vietnamese.
+If products are found: briefly describe them and ask if the customer wants to buy any.
+If not found: apologize politely and suggest searching for something else.${SUGGESTIONS_SUFFIX}`
               },
               ...mapMessagesToRoles(state.messages),
               response,
@@ -112,7 +114,22 @@ Nếu không tìm thấy, hãy xin lỗi và gợi ý họ tìm sản phẩm kh�
             try {
               if (toolResultStr !== "Product not found." && toolResultStr !== "Invalid ID format or database error.") {
                 focusedEntity = JSON.parse(toolResultStr);
-                uiEvent = { type: 'PRODUCT_CARD', data: focusedEntity };
+                // Accumulate: merge new products with existing viewed products
+                const newProducts = Array.isArray(focusedEntity) ? focusedEntity : [focusedEntity];
+                const existingViewed = state.viewedProducts || [];
+                const existingIds = new Set(existingViewed.map((p: any) => p.id));
+                const uniqueNew = newProducts.filter((p: any) => !existingIds.has(p.id));
+                const allProducts = [...existingViewed, ...uniqueNew];
+                // focusedEntity = the latest viewed product (for order agent context)
+                const latestProduct = newProducts[0];
+                uiEvent = { type: 'PRODUCT_CARD', data: allProducts };
+                return {
+                  messages: finalMessages,
+                  focusedEntity: latestProduct,  // single product object for context
+                  viewedProducts: uniqueNew,       // reducer merges into accumulation
+                  uiEvent,
+                  suggestions,
+                };
               }
             } catch (e) {}
 
