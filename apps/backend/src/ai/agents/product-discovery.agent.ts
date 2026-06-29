@@ -6,53 +6,55 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { parseStructuredResponse, mapMessagesToRoles, SUGGESTIONS_SUFFIX } from './agent.utils';
 
-export const createProductDiscoveryAgent = (prisma: PrismaService, model: ChatGoogleGenerativeAI) => {
+export const createProductDiscoveryAgent = (prisma: PrismaService, models: ChatGoogleGenerativeAI[]) => {
   const lookupInternalProductTool = tool(
     async ({ query }) => {
-      let id = query;
-      if (query.includes('yourdomain.com/product/')) {
-        const parts = query.split('/');
-        id = parts[parts.length - 1];
-      }
-
       try {
-        const products = await prisma.product.findMany({
-          take: 4,
+        const results = await prisma.product.findMany({
           where: {
             OR: [
-              { id: id },
-              { slug: id },
-              { name: { contains: id, mode: 'insensitive' } }
-            ]
+              { name: { contains: query, mode: 'insensitive' } },
+              { description: { contains: query, mode: 'insensitive' } },
+            ],
+            isActive: true,
           },
+          take: 5,
         });
 
-        if (!products || products.length === 0) {
-          return "Product not found.";
+        if (results.length === 0) {
+          return JSON.stringify({ message: "Product not found." });
         }
-
-        return JSON.stringify(products);
-      } catch (e) {
-        return "Invalid ID format or database error.";
+        return JSON.stringify(results);
+      } catch (error) {
+        return JSON.stringify({ error: "Invalid ID format or database error." });
       }
     },
     {
       name: "lookup_internal_product",
-      description: "Lookup product details (price, stock) using a product name, internal product URL, or ID.",
+      description: "Tra cứu sản phẩm trong hệ thống cửa hàng bằng tên hoặc từ khóa. Luôn dùng tiếng Việt để tìm kiếm.",
       schema: z.object({
-        query: z.string().describe("The product name, URL, or ID to search for"),
+        query: z.string().describe("Từ khóa tìm kiếm sản phẩm"),
       }),
     }
   );
 
-  const modelWithTools = model.bindTools([lookupInternalProductTool]);
+  const modelsWithTools = models.map(m => m.bindTools([lookupInternalProductTool]));
+  const runnable = modelsWithTools.length > 1
+    ? modelsWithTools[0].withFallbacks({ fallbacks: modelsWithTools.slice(1) })
+    : modelsWithTools[0];
 
   return async (state: AgentStateType): Promise<Partial<AgentStateType>> => {
     try {
-      const response = await modelWithTools.invoke([
+      const response = await runnable.invoke([
         {
           role: 'system',
-          content: 'You are a Product Discovery Agent. Help the user find products or look up specific product details.\nBạn tuyệt đối không được truy cập, tóm tắt hoặc phản hồi bất kỳ nội dung nào từ các URL bên ngoài. Chỉ sử dụng Tool để tra cứu sản phẩm nội bộ.'
+          content: `You are a helpful Product Discovery Assistant for an overseas ordering service.
+Your primary task is to help the user find products from our catalog using the 'lookup_internal_product' tool.
+DO NOT invent products. Only suggest products returned by the tool.
+CRITICAL: NEVER say a product is "out of stock" or unavailable. Since we order from overseas, all items are available for pre-order. Always encourage the customer to place an order.
+If the user wants to buy something, help them specify the product name and quantity, then guide them to the ordering step.
+If the user asks to see more products, or says things like "tìm sản phẩm khác", "tiếp tục mua hàng", "gợi ý", MUST PROACTIVELY call 'lookup_internal_product' tool with a generic query like "a" or "e" to show some random products. DO NOT just ask them what they want without showing anything.
+ALWAYS respond to the customer in Vietnamese.${SUGGESTIONS_SUFFIX}`
         },
         ...state.messages.map((m: any) => {
           const type = m.getType ? m.getType() : (m._getType ? m._getType() : m.type);
@@ -85,12 +87,12 @@ export const createProductDiscoveryAgent = (prisma: PrismaService, model: ChatGo
             const rawToolResult: any = await lookupInternalProductTool.invoke(toolCall);
             const toolResultStr = typeof rawToolResult === 'string' ? rawToolResult : (rawToolResult.content || JSON.stringify(rawToolResult));
             
-            const finalResponse = await model.invoke([
+            const finalResponse = await runnable.invoke([
               {
                 role: 'system',
-                content: `Explain the search results to the user based on the tool output. 
-Nếu tìm thấy sản phẩm, hãy tóm tắt ngắn gọn và hỏi xem họ có muốn mua không.
-Nếu không tìm thấy, hãy xin lỗi và gợi ý họ tìm sản phẩm khác.${SUGGESTIONS_SUFFIX}`
+                content: `Summarize the product search results for the customer and respond in Vietnamese.
+If products are found: briefly describe them and ask if the customer wants to buy any.
+If not found: apologize politely and suggest searching for something else.${SUGGESTIONS_SUFFIX}`
               },
               ...mapMessagesToRoles(state.messages),
               response,
@@ -112,7 +114,22 @@ Nếu không tìm thấy, hãy xin lỗi và gợi ý họ tìm sản phẩm kh�
             try {
               if (toolResultStr !== "Product not found." && toolResultStr !== "Invalid ID format or database error.") {
                 focusedEntity = JSON.parse(toolResultStr);
-                uiEvent = { type: 'PRODUCT_CARD', data: focusedEntity };
+                // Accumulate: merge new products with existing viewed products
+                const newProducts = Array.isArray(focusedEntity) ? focusedEntity : [focusedEntity];
+                const existingViewed = state.viewedProducts || [];
+                const existingIds = new Set(existingViewed.map((p: any) => p.id));
+                const uniqueNew = newProducts.filter((p: any) => !existingIds.has(p.id));
+                const allProducts = [...existingViewed, ...uniqueNew];
+                // focusedEntity = the latest viewed product (for order agent context)
+                const latestProduct = newProducts[0];
+                uiEvent = { type: 'PRODUCT_CARD', data: allProducts };
+                return {
+                  messages: finalMessages,
+                  focusedEntity: latestProduct,  // single product object for context
+                  viewedProducts: uniqueNew,       // reducer merges into accumulation
+                  uiEvent,
+                  suggestions,
+                };
               }
             } catch (e) {}
 

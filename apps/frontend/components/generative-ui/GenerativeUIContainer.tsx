@@ -5,6 +5,9 @@ import { useChat } from "../chat/ChatContext";
 import { QuoteSummary } from "./QuoteSummary";
 import { ProductCard } from "./ProductCard";
 import { OrderConfirmation } from "./OrderConfirmation";
+import { OrderTracking } from "./OrderTracking";
+import { OrderList } from "./OrderList";
+import { Cart } from "./Cart";
 
 export function GenerativeUIContainer() {
   const { uiEvent } = useChat();
@@ -15,21 +18,38 @@ export function GenerativeUIContainer() {
         <h2 className="text-xl font-semibold tracking-tight">Kết quả</h2>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-4xl w-full mx-auto flex justify-center">
+      <div className="flex-1 overflow-y-auto custom-scrollbar bg-zinc-50 dark:bg-zinc-900">
+        <div className="flex items-start justify-center p-6 min-h-full">
+          <div className="w-full max-w-3xl">
           {uiEvent && uiEvent.type === 'ORDER_CONFIRMATION' ? (
-            <OrderConfirmation {...uiEvent.data} />
+            <div className="flex justify-center">
+              <OrderConfirmation {...uiEvent.data} />
+            </div>
+          ) : uiEvent && uiEvent.type === 'CART' ? (
+            <Cart {...uiEvent.data} />
+          ) : uiEvent && uiEvent.type === 'ORDER_TRACKING' ? (
+            <div className="flex justify-center">
+              <OrderTracking {...uiEvent.data} />
+            </div>
+          ) : uiEvent && uiEvent.type === 'ORDER_LIST' ? (
+            <div className="flex justify-center">
+              <OrderList {...uiEvent.data} />
+            </div>
           ) : uiEvent && uiEvent.type === 'QUOTE' ? (
-            <QuoteSummary {...uiEvent.data} />
+            <div className="flex justify-center">
+              <QuoteSummary {...uiEvent.data} />
+            </div>
           ) : uiEvent && uiEvent.type === 'PRODUCT_CARD' ? (
             Array.isArray(uiEvent.data) ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 gap-6 w-full">
-                {uiEvent.data.map((product: any) => (
-                  <ProductCard key={product.id} {...product} />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 w-full">
+                {uiEvent.data.map((product: any, index: number) => (
+                  <ProductCard key={product.id || `product-card-${index}`} {...product} />
                 ))}
               </div>
             ) : (
-              <ProductCard {...uiEvent.data} />
+              <div className="w-full max-w-sm mx-auto">
+                <ProductCard {...uiEvent.data} />
+              </div>
             )
           ) : (
             <Card className="w-full shadow-sm border-zinc-200 dark:border-zinc-800">
@@ -44,6 +64,7 @@ export function GenerativeUIContainer() {
               </CardContent>
             </Card>
           )}
+        </div>
         </div>
       </div>
     </div>

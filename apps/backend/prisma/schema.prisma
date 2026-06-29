@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")   // Pooler URL (port 6543) — dùng cho runtime
+  directUrl = env("DIRECT_URL")     // Direct URL (port 5432) — dùng cho prisma migrate
 }
 
 enum Role {
@@ -14,6 +15,7 @@ enum Role {
 
 enum OrderState {
   PENDING
+  AWAITING_QUOTE
   CONFIRMED
   PROCESSING
   SHIPPED
@@ -63,12 +65,18 @@ model Product {
   slug          String      @unique @default(uuid())
   description   String?
   price         Float
+  requiresQuote Boolean     @default(false)
   
   // Các trường cho Order hộ
   sourceUrl     String?     // Link gốc (Taobao, 1688, Amazon...)
   originalPrice Float?      // Giá gốc ngoại tệ
   currency      String      @default("VND") // Đơn vị tiền tệ (CNY, USD, v.v.)
   weight        Float?      // Cân nặng thực tế (kg)
+  length        Float?      // Chiều dài (cm)
+  width         Float?      // Chiều rộng (cm)
+  height        Float?      // Chiều cao (cm)
+  importDutyRate Float      @default(0) // Thuế suất nhập khẩu (vd: 0.13)
+  vatRate       Float       @default(0.1) // Thuế VAT (vd: 0.08 hoặc 0.1)
 
   imageUrl      String?
   isActive      Boolean     @default(true)
@@ -85,6 +93,9 @@ model Order {
   user            User          @relation(fields: [userId], references: [id])
   status          OrderState    @default(PENDING)
   totalAmount     Float
+  shippingFee     Float         @default(0)
+  importDuty      Float         @default(0)
+  tax             Float         @default(0) // Dùng làm trường VAT
   paymentMethod   PaymentMethod @default(CASH_ON_DELIVERY)
   paymentStatus   PaymentStatus @default(PENDING)
   shippingAddress String?
@@ -100,6 +111,7 @@ model OrderItem {
   order     Order    @relation(fields: [orderId], references: [id])
   productId String
   product   Product  @relation(fields: [productId], references: [id])
+  productName String? // Tên sản phẩm lưu lại tại thời điểm đặt hàng
   quantity  Int
   price     Float // Giá tại thời điểm mua
   discount  Float    @default(0)

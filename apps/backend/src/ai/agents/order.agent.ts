@@ -6,11 +6,15 @@ import { z } from 'zod';
 import { PrismaService } from '../../prisma/prisma.service';
 import { parseStructuredResponse, mapMessagesToRoles, SUGGESTIONS_SUFFIX } from './agent.utils';
 
-export const createOrderAgent = (prisma: PrismaService, model: ChatGoogleGenerativeAI) => {
+export const createOrderAgent = (prisma: PrismaService, models: ChatGoogleGenerativeAI[]) => {
   const createOrderTool = tool(
     async ({ items, shippingAddress, userId }) => {
       try {
-        let totalAmount = 0;
+        let subtotal = 0;
+        let totalImportDuty = 0;
+        let totalVat = 0;
+        let totalShippingFee = 0;
+        let isQuote = false;
         const validItems: { product: any; quantity: number }[] = [];
 
         for (const item of items) {
@@ -18,26 +22,51 @@ export const createOrderAgent = (prisma: PrismaService, model: ChatGoogleGenerat
             where: {
               name: { contains: item.productName, mode: 'insensitive' }
             }
-          });
+          }) as any;
 
           if (!product) {
             return JSON.stringify({ success: false, message: `Không tìm thấy sản phẩm nào có tên gần giống "${item.productName}". Vui lòng kiểm tra lại.` });
           }
 
+          if (product.requiresQuote || product.price === 0) {
+            isQuote = true;
+          }
+
+          const itemSubtotal = product.price * item.quantity;
+          const weight = product.weight || 0;
+          const length = product.length || 0;
+          const width = product.width || 0;
+          const height = product.height || 0;
+          
+          const volumetricWeight = (length * width * height) / 5000;
+          const appliedWeight = Math.max(weight, volumetricWeight);
+          const shippingFee = appliedWeight * 200000 * item.quantity;
+          
+          const importDuty = itemSubtotal * product.importDutyRate;
+          const vat = (itemSubtotal + importDuty) * product.vatRate;
+
           validItems.push({
             product,
             quantity: item.quantity
           });
-          totalAmount += product.price * item.quantity;
+          subtotal += itemSubtotal;
+          totalShippingFee += shippingFee;
+          totalImportDuty += importDuty;
+          totalVat += vat;
         }
+
+        const totalAmount = subtotal + totalImportDuty + totalVat + totalShippingFee;
 
         const result = await prisma.$transaction(async (tx) => {
           const order = await tx.order.create({
             data: {
               userId,
               totalAmount,
+              shippingFee: totalShippingFee,
+              importDuty: totalImportDuty,
+              tax: totalVat,
               shippingAddress,
-              status: 'PENDING',
+              status: isQuote ? ('AWAITING_QUOTE' as any) : ('PENDING' as any),
               paymentMethod: 'CASH_ON_DELIVERY',
               paymentStatus: 'PENDING'
             }
@@ -48,6 +77,7 @@ export const createOrderAgent = (prisma: PrismaService, model: ChatGoogleGenerat
               data: {
                 orderId: order.id,
                 productId: validItem.product.id,
+                productName: validItem.product.name,
                 quantity: validItem.quantity,
                 price: validItem.product.price,
               }
@@ -57,6 +87,10 @@ export const createOrderAgent = (prisma: PrismaService, model: ChatGoogleGenerat
           return {
             id: order.id,
             totalAmount,
+            shippingFee: totalShippingFee,
+            importDuty: totalImportDuty,
+            tax: totalVat,
+            isQuote,
             items: validItems.map(vi => ({
               productName: vi.product.name,
               quantity: vi.quantity,
@@ -74,7 +108,7 @@ export const createOrderAgent = (prisma: PrismaService, model: ChatGoogleGenerat
     },
     {
       name: "create_order",
-      description: "Tạo đơn hàng mới trong hệ thống. Chỉ gọi khi khách hàng đã CHẮC CHẮN ĐỒNG Ý XÁC NHẬN đơn hàng.",
+      description: "Tạo đơn hàng hoặc yêu cầu báo giá mới trong hệ thống. Gọi khi khách hàng đã ĐỒNG Ý XÁC NHẬN đơn hoặc yêu cầu báo giá.",
       schema: z.object({
         items: z.array(z.object({
           productName: z.string().describe("Tên sản phẩm khách hàng muốn mua"),
@@ -90,17 +124,57 @@ export const createOrderAgent = (prisma: PrismaService, model: ChatGoogleGenerat
     async ({ items }) => {
       try {
         const products = [];
+        let subtotal = 0;
+        let totalImportDuty = 0;
+        let totalVat = 0;
+        let totalShippingFee = 0;
+        let totalAppliedWeight = 0;
+        let isQuote = false;
+        
         for (const item of items) {
           const product = await prisma.product.findFirst({
             where: {
               name: { contains: item.productName, mode: 'insensitive' }
             }
-          });
+          }) as any;
           if (product) {
-            products.push(product);
+            if (product.requiresQuote || product.price === 0) {
+              isQuote = true;
+            }
+            const itemSubtotal = product.price * item.quantity;
+            
+            const weight = product.weight || 0;
+            const length = product.length || 0;
+            const width = product.width || 0;
+            const height = product.height || 0;
+            
+            const volumetricWeight = (length * width * height) / 5000;
+            const appliedWeight = Math.max(weight, volumetricWeight);
+            const shippingFee = appliedWeight * 200000 * item.quantity;
+            
+            const importDuty = itemSubtotal * product.importDutyRate;
+            const vat = (itemSubtotal + importDuty) * product.vatRate;
+            
+            products.push({ 
+                ...product, 
+                quantity: item.quantity, 
+                subtotal: itemSubtotal,
+                shippingFee,
+                importDuty,
+                vat,
+                appliedWeight: appliedWeight * item.quantity
+            });
+            subtotal += itemSubtotal;
+            totalShippingFee += shippingFee;
+            totalImportDuty += importDuty;
+            totalVat += vat;
+            totalAppliedWeight += appliedWeight * item.quantity;
           }
         }
-        return JSON.stringify({ success: true, products });
+        
+        const total = subtotal + totalImportDuty + totalVat + totalShippingFee;
+        
+        return JSON.stringify({ success: true, items: products, subtotal, tax: totalVat, importDuty: totalImportDuty, shippingFee: totalShippingFee, total, isQuote, totalAppliedWeight });
       } catch (error) {
         return JSON.stringify({ success: false });
       }
@@ -110,13 +184,39 @@ export const createOrderAgent = (prisma: PrismaService, model: ChatGoogleGenerat
       description: "Hiển thị danh sách sản phẩm lên màn hình cho khách xem và xác nhận.",
       schema: z.object({
         items: z.array(z.object({
-          productName: z.string().describe("Tên sản phẩm khách hàng muốn mua")
+          productName: z.string().describe("Tên sản phẩm khách hàng muốn mua"),
+          quantity: z.number().describe("Số lượng của sản phẩm này (số nguyên > 0)")
         })).describe("Danh sách các sản phẩm cần tra cứu và hiển thị"),
       }),
     }
   );
 
-  const modelWithTools = model.bindTools([createOrderTool, previewOrderTool]);
+  const saveUserAddressTool = tool(
+    async ({ address, userId }) => {
+      try {
+        await prisma.user.update({
+          where: { id: userId },
+          data: { address }
+        });
+        return JSON.stringify({ success: true, message: "Đã lưu địa chỉ vào hồ sơ." });
+      } catch (error) {
+        return JSON.stringify({ success: false, message: "Lỗi lưu địa chỉ." });
+      }
+    },
+    {
+      name: "save_user_address",
+      description: "Lưu địa chỉ giao hàng của người dùng vào hồ sơ NGAY LẬP TỨC khi họ vừa cung cấp địa chỉ.",
+      schema: z.object({
+        address: z.string().describe("Địa chỉ giao hàng chi tiết"),
+        userId: z.string().describe("ID của người dùng hiện tại"),
+      }),
+    }
+  );
+
+  const modelsWithTools = models.map(m => m.bindTools([createOrderTool, previewOrderTool, saveUserAddressTool]));
+  const runnable = modelsWithTools.length > 1
+    ? modelsWithTools[0].withFallbacks({ fallbacks: modelsWithTools.slice(1) })
+    : modelsWithTools[0];
 
   return async (state: AgentStateType): Promise<Partial<AgentStateType>> => {
     if (!state.currentUser || !state.currentUser.sub) {
@@ -129,15 +229,39 @@ export const createOrderAgent = (prisma: PrismaService, model: ChatGoogleGenerat
     const userId = state.currentUser.sub;
 
     try {
-      const response = await modelWithTools.invoke([
+      // Lấy thông tin user từ DB để biết họ đã có địa chỉ chưa
+      const dbUser = await prisma.user.findUnique({ where: { id: userId } });
+      const userAddress = dbUser?.address;
+
+      const focusedProduct = state.focusedEntity;
+      const hasFocused = focusedProduct != null && (Array.isArray(focusedProduct) ? focusedProduct.length > 0 : true);
+      console.log('[OrderAgent] focusedEntity:', JSON.stringify(focusedProduct));
+      console.log('[OrderAgent] viewedProducts:', JSON.stringify(state.viewedProducts));
+
+      const response = await runnable.invoke([
         {
           role: 'system',
-          content: `Bạn là trợ lý đặt hàng. ID của khách hàng hiện tại là ${userId}.
+          content: `Bạn là trợ lý đặt hàng từ nước ngoài. ID của khách hàng hiện tại là ${userId}.
+${userAddress ? `\nĐỊA CHỈ GIAO HÀNG ĐÃ LƯU: "${userAddress}".\n=> KHÁCH ĐÃ CÓ ĐỊA CHỈ. Bạn KHÔNG cần hỏi lại địa chỉ nữa. Khi khách xác nhận đặt hàng, hãy gọi tool \`create_order\` và truyền địa chỉ này vào.` : '\n=> KHÁCH CHƯA CÓ ĐỊA CHỈ. Bạn phải yêu cầu khách cung cấp địa chỉ chi tiết trước khi đặt hàng.'}
+${hasFocused
+  ? `CONTEXT - SẢN PHẨM ĐANG ĐƯỢC XEM TRÊN MÀN HÌNH:\n${JSON.stringify(Array.isArray(focusedProduct) ? focusedProduct : [focusedProduct], null, 2)}\n`
+  : ''}
 Nhiệm vụ của bạn là gom danh sách các món hàng (tên và số lượng) và địa chỉ giao hàng mà khách yêu cầu.
-QUAN TRỌNG: TUYỆT ĐỐI KHÔNG gọi tool create_order ngay. Khi khách yêu cầu mua hàng, bạn PHẢI gọi tool preview_order để tra cứu thông tin và hiển thị sản phẩm lên màn hình.
-Sau khi gọi preview_order, bạn phải mời khách hàng tham khảo khung kết quả và hỏi: "Bạn có xác nhận đặt đơn hàng này không?".
-Chỉ khi nào khách hàng chat ĐỒNG Ý / XÁC NHẬN, bạn mới được phép gọi tool create_order.
-Lưu ý: Luôn truyền ${userId} vào tham số userId của tool.${SUGGESTIONS_SUFFIX}`
+QUAN TRỌNG NHẤT: Đây là hàng order, KHÔNG BAO GIỜ báo "hết hàng".
+
+QUY TẮC XỬ LÝ GIỎ HÀNG:
+1. Nếu khách nói "thêm vào giỏ hàng" / "mua cái này" / "đặt cái đó" mà KHÔNG nói tên cụ thể:
+   - Nếu có SẢN PHẨM ĐANG ĐƯỢC XEM (CONTEXT ở trên), hãy sử dụng ngay tên sản phẩm đó và hỏi "Bạn muốn đặt bao nhiêu cái [tên sản phẩm] ạ?"
+   - Nếu KHÔNG có sản phẩm nào đang xem, hỏi "Bạn muốn đặt sản phẩm nào ạ?"
+2. Nếu khách nói "thêm 2 cái" / "lấy 3 cái" / "cho tôi 2" mà KHÔNG nói tên:
+   - Sử dụng SẢN PHẨM ĐANG ĐƯỢC XEM (CONTEXT) + số lượng khách vừa nói, gọi ngay preview_order
+3. Nếu khách nói cả tên VÀ số lượng (vd: "thêm 2 cái laptop"): gọi preview_order ngay
+4. Nếu khách nói nhiều sản phẩm (vd: "1 laptop và 2 chuột"): gọi preview_order với cả danh sách trong 1 lần gọi
+
+TUYỆT ĐỐI KHÔNG gọi create_order ngay. Phải gọi preview_order trước.
+KHI KHÁCH CUNG CẤP ĐỊA CHỈ GIAO HÀNG: Gọi tool save_user_address ngay lập tức.
+Sau khi preview_order, hỏi xác nhận. Chỉ gọi create_order khi khách ĐỒNG Ý / XÁC NHẬN.
+Luôn truyền ${userId} vào tham số userId của tool.${SUGGESTIONS_SUFFIX}`
         },
         ...mapMessagesToRoles(state.messages),
       ]);
@@ -159,24 +283,39 @@ Lưu ý: Luôn truyền ${userId} vào tham số userId của tool.${SUGGESTIONS
 
       if (toolCalls.length > 0) {
         for (const toolCall of toolCalls) {
-          if (toolCall.name === 'create_order' || toolCall.name === 'preview_order') {
-            const rawToolResult: any = await (toolCall.name === 'create_order' ? createOrderTool.invoke(toolCall) : previewOrderTool.invoke(toolCall));
+          if (toolCall.name === 'create_order' || toolCall.name === 'preview_order' || toolCall.name === 'save_user_address') {
+            let rawToolResult: any;
+            if (toolCall.name === 'create_order') {
+              rawToolResult = await createOrderTool.invoke(toolCall);
+            } else if (toolCall.name === 'preview_order') {
+              rawToolResult = await previewOrderTool.invoke(toolCall);
+            } else {
+              rawToolResult = await saveUserAddressTool.invoke(toolCall);
+            }
+            
             const toolResultStr = typeof rawToolResult === 'string' ? rawToolResult : (rawToolResult.content || JSON.stringify(rawToolResult));
             
             const parsedResult = JSON.parse(toolResultStr);
 
             if (toolCall.name === 'create_order' && parsedResult.success) {
               uiEvent = { type: 'ORDER_CONFIRMATION', data: parsedResult.order };
-            } else if (toolCall.name === 'preview_order' && parsedResult.success && parsedResult.products.length > 0) {
-              uiEvent = { type: 'PRODUCT_CARD', data: parsedResult.products };
+            } else if (toolCall.name === 'preview_order' && parsedResult.success && parsedResult.items.length > 0) {
+              uiEvent = { type: 'CART', data: parsedResult };
             }
 
-            const finalResponse = await model.invoke([
+            const finalResponse = await runnable.invoke([
               {
                 role: 'system',
                 content: toolCall.name === 'create_order'
-                  ? `Thông báo kết quả đặt hàng cho người dùng. Nếu thành công, hãy nói đơn hàng đã được ghi nhận và hiển thị trên màn hình. Nếu thất bại, giải thích lý do (như không tìm thấy sản phẩm).${SUGGESTIONS_SUFFIX}`
-                  : `Thông báo rằng bạn đã hiển thị thông tin chi tiết các sản phẩm lên màn hình để khách tham khảo. Nhắc khách xem và xác nhận nếu muốn chốt đơn.${SUGGESTIONS_SUFFIX}`
+                  ? `Report the order result to the customer in Vietnamese.
+If successful:
+- The order ID is long (UUID format). ALWAYS shorten it to only the first 8 uppercase characters prefixed with '#'. Example: if id is '8fe9b653-29a9-45c2-baa5-3a55916361d8', show '#8FE9B653'.
+- If parsedResult.isQuote is true (order requires quote): MUST inform the customer that their request has been recorded (show the short order ID) and you are IMMEDIATELY transferring this conversation to a sales consultant to discuss pricing directly.
+- If it is a normal order: Confirm the order has been placed successfully and show the short order ID.
+If failed: Explain the reason (e.g. product not found).${SUGGESTIONS_SUFFIX}`
+                  : toolCall.name === 'save_user_address'
+                    ? `Confirm to the customer in Vietnamese that you have saved their shipping address successfully. Ask if they would like to proceed with placing the order.${SUGGESTIONS_SUFFIX}`
+                    : `Inform the customer in Vietnamese that you have added the item(s) to their cart and displayed the detailed cost breakdown (including shipping and taxes) on the screen. Ask them to confirm if they want to proceed with the order.${SUGGESTIONS_SUFFIX}`
               },
               ...mapMessagesToRoles(state.messages),
               response,

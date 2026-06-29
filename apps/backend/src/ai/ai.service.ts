@@ -12,54 +12,68 @@ import { createOrderAgent } from './agents/order.agent';
 import { createHumanHandoffAgent } from './agents/human-handoff.agent';
 import { createUnknownAgent } from './agents/unknown.agent';
 import { createAuthAgent } from './agents/auth.agent';
+import { createOrderTrackingAgent } from './agents/order-tracking.agent';
 import { AuthService } from '../auth/auth.service';
 
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
-  private model!: ChatGoogleGenerativeAI;
+  private models: ChatGoogleGenerativeAI[] = [];
   private app: any;
 
   constructor(private readonly prisma: PrismaService, private readonly authService: AuthService) {
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      this.logger.error('GOOGLE_API_KEY is not set. AI features will be unavailable.');
+    const keyString = process.env.GOOGLE_API_KEYS || process.env.GOOGLE_API_KEY || '';
+    const keys = keyString.split(',').map(k => k.trim()).filter(Boolean);
+
+    if (keys.length === 0) {
+      this.logger.error('No GOOGLE_API_KEY or GOOGLE_API_KEYS provided. AI features will be unavailable.');
     } else {
       try {
-        this.model = new ChatGoogleGenerativeAI({
-          model: 'gemini-2.5-flash',
-          temperature: 0,
-          safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-          ],
+        this.models = keys.map((apiKey, index) => {
+          const model = new ChatGoogleGenerativeAI({
+            apiKey,
+            model: 'gemini-2.5-flash',
+            temperature: 0,
+            safetySettings: [
+              { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+              { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+              { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+              { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+            ],
+          });
+          this.logger.log(`ChatGoogleGenerativeAI (Key ${index + 1}) initialized successfully.`);
+          return model;
         });
-        this.logger.log('ChatGoogleGenerativeAI initialized successfully.');
       } catch (e) {
-        this.logger.error('Failed to initialize ChatGoogleGenerativeAI.', e);
+        this.logger.error('Failed to initialize ChatGoogleGenerativeAI models.', e);
       }
     }
 
-    if (this.model) {
+    if (this.models.length > 0) {
       this.initGraph();
     } else {
-      this.logger.warn('LangGraph will not be initialized because the AI model is unavailable.');
+      this.logger.warn('LangGraph will not be initialized because no AI models are available.');
     }
+  }
+
+  private getRotatedModels(startIndex: number): ChatGoogleGenerativeAI[] {
+    if (this.models.length === 0) return [];
+    const index = startIndex % this.models.length;
+    return [...this.models.slice(index), ...this.models.slice(0, index)];
   }
 
   private initGraph() {
     // We explicitly cast to any here to bypass strict Type limitations when building
     const workflow = new StateGraph(AgentState) as any;
 
-    // Initialize the specialized agents
-    const intentAgent = createIntentAgent(this.model);
-    const productDiscoveryAgent = createProductDiscoveryAgent(this.prisma, this.model);
-    const orderAgent = createOrderAgent(this.prisma, this.model);
+    // Initialize the specialized agents with Round-Robin Load Balancing
+    const intentAgent = createIntentAgent(this.getRotatedModels(0));
+    const productDiscoveryAgent = createProductDiscoveryAgent(this.prisma, this.getRotatedModels(1));
+    const orderAgent = createOrderAgent(this.prisma, this.getRotatedModels(2));
     const humanHandoffAgent = createHumanHandoffAgent();
-    const unknownAgent = createUnknownAgent(this.model);
-    const authAgent = createAuthAgent(this.authService, this.model);
+    const unknownAgent = createUnknownAgent(this.getRotatedModels(3));
+    const authAgent = createAuthAgent(this.authService, this.getRotatedModels(4));
+    const orderTrackingAgent = createOrderTrackingAgent(this.prisma, this.getRotatedModels(5));
 
     // Add Nodes
     workflow.addNode('detectIntent', intentAgent);
@@ -68,6 +82,7 @@ export class AiService {
     workflow.addNode('humanHandoff', humanHandoffAgent);
     workflow.addNode('generalChat', unknownAgent);
     workflow.addNode('auth', authAgent);
+    workflow.addNode('orderTracking', orderTrackingAgent);
 
     // Define Graph Edges
     // 1. Everything starts at Intent Detection
@@ -89,6 +104,8 @@ export class AiService {
         case 'complaint':
         case 'cancel_request':
           return 'humanHandoff';
+        case 'view_order':
+          return 'orderTracking';
         default:
           return 'generalChat';
       }
@@ -100,6 +117,7 @@ export class AiService {
     workflow.addEdge('humanHandoff', END);
     workflow.addEdge('generalChat', END);
     workflow.addEdge('auth', END);
+    workflow.addEdge('orderTracking', END);
 
     const checkpointer = new MemorySaver();
     this.app = workflow.compile({ checkpointer });
