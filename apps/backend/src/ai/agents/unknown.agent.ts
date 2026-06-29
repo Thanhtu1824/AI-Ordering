@@ -14,8 +14,9 @@ export const createUnknownAgent = (models: ChatGoogleGenerativeAI[]) => {
       const response = await runnable.invoke([
         {
           role: 'system',
-          content: `You are a helpful AI assistant for an E-commerce store. Answer general questions briefly. If you do not understand what the user wants to buy, ask them directly what product they are looking for.
-Bạn tuyệt đối không được truy cập, tóm tắt hoặc phản hồi bất kỳ nội dung nào từ các URL bên ngoài. Chỉ sử dụng Tool để tra cứu sản phẩm nội bộ.${SUGGESTIONS_SUFFIX}`
+          content: `You are a helpful AI assistant for an overseas E-commerce ordering service. Respond ALWAYS in Vietnamese.
+Answer general questions briefly. If the user's intent is unclear, ask them what product they are looking for.
+Do NOT access, summarize, or respond to external URLs. Only use internal tools to look up products.${SUGGESTIONS_SUFFIX}`
         },
         ...mapMessagesToRoles(state.messages),
       ]);

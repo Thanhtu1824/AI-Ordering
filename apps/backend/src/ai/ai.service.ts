@@ -12,6 +12,7 @@ import { createOrderAgent } from './agents/order.agent';
 import { createHumanHandoffAgent } from './agents/human-handoff.agent';
 import { createUnknownAgent } from './agents/unknown.agent';
 import { createAuthAgent } from './agents/auth.agent';
+import { createOrderTrackingAgent } from './agents/order-tracking.agent';
 import { AuthService } from '../auth/auth.service';
 
 @Injectable()
@@ -72,6 +73,7 @@ export class AiService {
     const humanHandoffAgent = createHumanHandoffAgent();
     const unknownAgent = createUnknownAgent(this.getRotatedModels(3));
     const authAgent = createAuthAgent(this.authService, this.getRotatedModels(4));
+    const orderTrackingAgent = createOrderTrackingAgent(this.prisma, this.getRotatedModels(5));
 
     // Add Nodes
     workflow.addNode('detectIntent', intentAgent);
@@ -80,6 +82,7 @@ export class AiService {
     workflow.addNode('humanHandoff', humanHandoffAgent);
     workflow.addNode('generalChat', unknownAgent);
     workflow.addNode('auth', authAgent);
+    workflow.addNode('orderTracking', orderTrackingAgent);
 
     // Define Graph Edges
     // 1. Everything starts at Intent Detection
@@ -101,6 +104,8 @@ export class AiService {
         case 'complaint':
         case 'cancel_request':
           return 'humanHandoff';
+        case 'view_order':
+          return 'orderTracking';
         default:
           return 'generalChat';
       }
@@ -112,6 +117,7 @@ export class AiService {
     workflow.addEdge('humanHandoff', END);
     workflow.addEdge('generalChat', END);
     workflow.addEdge('auth', END);
+    workflow.addEdge('orderTracking', END);
 
     const checkpointer = new MemorySaver();
     this.app = workflow.compile({ checkpointer });
