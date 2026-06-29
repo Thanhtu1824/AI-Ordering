@@ -85,6 +85,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           // Không gọi setUiEvent để giữ nguyên UI (ProductCard) trước đó
         } else {
           setUiEvent(data.uiEvent);
+          // Đồng bộ giỏ hàng local khi AI hiển thị giỏ hàng
+          if (data.uiEvent.type === 'CART' && data.uiEvent.data && data.uiEvent.data.items) {
+            setCartItems(data.uiEvent.data.items.map((i: any) => ({
+              id: i.id,
+              name: i.name,
+              price: i.price,
+              imageUrl: i.imageUrl || null,
+              requiresQuote: i.requiresQuote,
+              quantity: i.quantity
+            })));
+          } else if (data.uiEvent.type === 'ORDER_CONFIRMATION') {
+            // Xóa giỏ hàng sau khi đặt hàng thành công
+            setCartItems([]);
+          }
         }
       }
     });
